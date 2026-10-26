@@ -28,7 +28,7 @@ CONFIG_PATH = REPO / "config.json"
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm", ".ts", ".flv"}
 
 DEFAULT_CONFIG = {
-    "video_folders": [str(Path.home() / "Videos")],
+    "video_folders": [str(Path.home() / "Videos" / "Highlight Videos")],
     "data_dir": str(REPO / "datos"),
     "export_dir": "",
     "default_profile": "on_softball",
@@ -39,7 +39,7 @@ def load_config():
     cfg = dict(DEFAULT_CONFIG)
     if CONFIG_PATH.exists():
         try:
-            cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+            cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig")))
         except Exception:
             pass
     return cfg
@@ -65,7 +65,7 @@ def scan_videos():
         base = Path(folder).expanduser()
         if not base.exists():
             continue
-        for path in base.rglob("*"):
+        for path in base.iterdir():  # solo esa carpeta, sin subcarpetas
             try:
                 if not path.is_file() or path.suffix.lower() not in VIDEO_EXTS:
                     continue
