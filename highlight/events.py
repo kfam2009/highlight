@@ -320,7 +320,7 @@ def replay_blocks(stingers, gap_s=25.0):
     return [(a, b) for a, b in blocks]
 
 
-def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr, present=None, fps=5):
+def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr, present=None, fps=5, count_changes=None):
     """Ubica el lanzamiento real de la jugada.
 
     El operador del scorebug suele actualizar tarde (despues del replay o
@@ -358,6 +358,27 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
     else:
         pitch = search_end - (14.0 if rb else 15.0)
     pitch = max(w0 - 2.0, pitch)
+    # El conteo cambia despues de cada lanzamiento. Si el lanzamiento ubicado es
+    # anterior al ultimo cambio de conteo, es un lanzamiento previo (pasa cuando
+    # el pitcheo del out no muestra la velocidad): la jugada esta despues.
+    lc = _last_in(count_changes or [], w0, E - 1.0)
+    if lc is not None and pitch < lc - 0.5 and ev["type"] in ("out", "ponche", "tercer_out"):
+        if rb and rb[0] < lc:
+            rb = None
+        start = max(0.0, lc + 0.5)
+        end = min(E + 4.0, lc + 45.0)
+        if rb and rb[0] - lc < 60.0:
+            end = max(end, (rb[1] + 1.0) if rb[1] > rb[0] else rb[0] + 12.0)
+        end = max(end, start + 15.0)
+        end = min(end, start + 80.0)
+        return {
+            "pitchTime": round(float(lc + 1.0), 2),
+            "start": round(float(start), 2),
+            "end": round(float(end), 2),
+            "replay": [round(float(rb[0]), 2), round(float(rb[1]), 2)] if rb else None,
+            "timing": "conteo",
+            "scorebugTime": round(float(E), 2),
+        }
     if not rb:
         # replay que llega despues del cambio del scorebug (graficos que actualizan rapido)
         for a, b in stingers_blocks:
@@ -481,7 +502,7 @@ def absence_replays(raw, st, fps, min_s=3.0, max_s=45.0):
     return out
 
 
-def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_from_absence=False):
+def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_from_absence=False, out_from_count=False):
     fps = raw["fps"]
     st = smooth_state(raw)
     mph = onsets(raw["mph"], fps)
@@ -492,6 +513,10 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
     audio_thr = float(np.percentile(audio_rms, 97)) if audio_rms is not None and len(audio_rms) else None
 
     groups = group_changes(raw_changes(st, fps))
+    cnt = st["count"]
+    # cambios de conteo por un lanzamiento (no la vuelta a 0-0 cuando termina el turno)
+    count_changes = [i / fps for i in range(1, len(cnt))
+                     if cnt[i] != cnt[i - 1] and cnt[i] and cnt[i - 1] and cnt[i] != "0-0"]
     events = []
     first = next((i for i, v in enumerate(st["outs"]) if v is not None), 0)
     t_prev = first / fps
@@ -500,7 +525,8 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
         ev = {**info, "t": g["t"],
               "before": {k: g["before"][k] for k in ALL_FIELDS},
               "after": {k: g["after"][k] for k in ALL_FIELDS}}
-        ev.update(time_play(ev, t_prev, mph, blocks, audio_rms, audio_rate, audio_thr, present=raw["present"], fps=fps))
+        ev.update(time_play(ev, t_prev, mph, blocks, audio_rms, audio_rate, audio_thr, present=raw["present"], fps=fps,
+                            count_changes=count_changes if out_from_count else None))
         events.append(ev)
         t_prev = g["t_last"]
 

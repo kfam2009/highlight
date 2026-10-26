@@ -169,7 +169,8 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     stingers = find_stingers(ctx, profile.stinger)
     rms = load_audio_rms(work)
     result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
-                                replay_from_absence=bool(profile.cfg.get("replay_from_absence")))
+                                replay_from_absence=bool(profile.cfg.get("replay_from_absence")),
+                                out_from_count=bool(profile.cfg.get("out_from_count")))
     clips, halves = build_clips(result)
 
     if render_previews:

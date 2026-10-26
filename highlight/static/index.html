@@ -138,7 +138,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const state = { run: null, decisions: {}, selected: new Set(), focus: null, config: null };
 const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar', final: 'Final' };
-const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo', final: 'cierre del partido' };
+const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo', final: 'cierre del partido', conteo: 'desde el último cambio de conteo' };
 
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
