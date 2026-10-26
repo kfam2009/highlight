@@ -1,0 +1,27 @@
+{
+  "name": "on_softball",
+  "description": "Scorebug abajo a la derecha (carreras a los costados, rombo de bases, entrada, P:xx, conteo y outs). Partido de referencia: 2026-08-15.",
+  "sport": "softball",
+  "crop": {"x": 0.70, "y": 0.78, "w": 0.30, "h": 0.22},
+  "crop_size": [576, 236],
+  "fps": 5,
+  "presence_threshold": 20,
+  "glyph_threshold": 140,
+  "regions": {
+    "away":   [25, 90, 80, 155],
+    "home":   [345, 90, 400, 155],
+    "pnum":   [70, 170, 108, 190],
+    "count":  [104, 168, 150, 190],
+    "outs":   [264, 168, 284, 190],
+    "inning": [203, 143, 227, 167]
+  },
+  "glyph_fields": {"away": "score", "home": "score", "count": "count", "outs": "outs", "inning": "inning"},
+  "points": {
+    "base1": [240, 128],
+    "base2": [215, 105],
+    "base3": [190, 128],
+    "arrow_up": [215, 137],
+    "arrow_down": [215, 172],
+    "center": [215, 118]
+  }
+}

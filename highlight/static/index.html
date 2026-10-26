@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Highlights · Panel Go</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #070b10; --panel: #101722; --panel-2: #151d2a; --ink: #f6f8fb; --muted: #9aa6b8;
+    --line: #2c3648; --green: #22c55e; --red: #f04438; --amber: #f59e0b; --blue: #2e90fa; --violet: #a78bfa;
+    --shadow: 0 16px 34px rgba(0,0,0,.28);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; font-family: Inter, "Segoe UI", system-ui, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 10px 18px; border-bottom: 1px solid var(--line); background: rgba(7,11,16,.95); position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); }
+  .hrow { max-width: 1600px; margin: 0 auto; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .brand { display: flex; gap: 12px; align-items: center; }
+  .brand img { height: 40px; }
+  .eyebrow { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+  h1 { margin: 0; font-size: 20px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 360px minmax(0,1fr); gap: 16px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .side { position: static !important; max-height: none !important; } }
+  .side { align-self: start; position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow: auto; display: grid; gap: 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); padding: 12px; }
+  .box h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; align-items: center; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  select, button, input, textarea { font: inherit; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); }
+  select, input, textarea { width: 100%; padding: 7px 8px; }
+  textarea { min-height: 64px; resize: vertical; font-size: 12px; }
+  button { min-height: 32px; padding: 6px 10px; cursor: pointer; font-size: 13px; font-weight: 700; }
+  button:hover { border-color: rgba(255,255,255,.42); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--green); color: #041007; border-color: var(--green); }
+  button.blue { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button.danger { color: #ffd2cd; border-color: rgba(240,68,56,.55); }
+  button.small { min-height: 26px; padding: 3px 7px; font-size: 12px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .list { display: grid; gap: 6px; }
+  .item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); font-size: 12px; }
+  .item.active { border-color: var(--blue); }
+  .item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 12.5px; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 999px; font-size: 11px; font-weight: 800; border: 1px solid var(--line); color: var(--muted); }
+  .tag.ok { color: var(--green); border-color: rgba(34,197,94,.5); }
+  .tag.run { color: var(--amber); border-color: rgba(245,158,11,.5); }
+  .tag.err { color: var(--red); border-color: rgba(240,68,56,.5); }
+  .bar { height: 5px; background: #1d2636; border-radius: 3px; overflow: hidden; margin-top: 5px; }
+  .bar > div { height: 100%; background: var(--amber); width: 0; transition: width .4s; }
+  .content { display: grid; gap: 14px; min-width: 0; }
+  .runhead { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .runhead .title { font-size: 18px; font-weight: 800; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; background: var(--panel-2); }
+  .stat b { font-size: 14px; }
+  .innings { display: flex; gap: 6px; flex-wrap: wrap; position: sticky; top: 62px; z-index: 5; background: var(--bg); padding: 6px 0; }
+  .chip { padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); font-size: 12px; font-weight: 700; cursor: pointer; }
+  .chip .n { color: var(--muted); font-weight: 600; }
+  .chip.done { border-color: rgba(34,197,94,.6); }
+  .chip.partial { border-color: rgba(245,158,11,.6); }
+  .half { scroll-margin-top: 110px; }
+  .half h2 { margin: 6px 0 10px; font-size: 16px; display: flex; gap: 10px; align-items: baseline; }
+  .half h2 .muted { font-weight: 500; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .card.approved { border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset; }
+  .card.rejected { opacity: .5; }
+  .card.focus { outline: 2px solid var(--blue); }
+  .card video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
+  .card .body { padding: 9px 10px; display: grid; gap: 6px; }
+  .ctitle { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .ctitle b { font-size: 14px; }
+  .type { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: #222c3c; }
+  .t-carrera { background: rgba(240,68,56,.2); color: #ffb4ab; }
+  .t-hit, .t-doble_play { background: rgba(46,144,250,.18); color: #a9d1ff; }
+  .t-tercer_out { background: rgba(167,139,250,.18); color: #d5c8ff; }
+  .t-revisar { background: rgba(245,158,11,.2); color: #ffd58a; }
+  .sug { color: var(--amber); font-size: 11px; font-weight: 800; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .row .lbl { font-size: 11px; color: var(--muted); width: 52px; }
+  .actions button { flex: 1; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; display: none; max-width: 420px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; }
+  .kbd { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="brand">
+      <img src="/brand-logo.png" alt="" onerror="this.remove()">
+      <div><div class="eyebrow">Softball / béisbol</div><h1>Highlights</h1></div>
+    </div>
+    <div class="row">
+      <span class="kbd">Teclas sobre un clip: A aprobar · D descartar · espacio reproducir · ↑↓ moverse</span>
+    </div>
+  </div>
+</header>
+<main>
+  <aside class="side">
+    <div class="box">
+      <h3>Juegos grabados <button class="small" id="refreshVideos">Buscar</button></h3>
+      <div class="list" id="videos"><div class="muted">Buscando…</div></div>
+      <label for="profile">Perfil de scorebug</label>
+      <select id="profile"></select>
+      <div class="row" style="margin-top:8px"><button class="primary" id="analyzeSel" style="flex:1">Analizar seleccionados</button></div>
+    </div>
+    <div class="box" id="jobsBox" style="display:none">
+      <h3>Cola de análisis</h3>
+      <div class="list" id="jobs"></div>
+    </div>
+    <div class="box">
+      <h3>Análisis</h3>
+      <div class="list" id="runs"></div>
+    </div>
+    <div class="box">
+      <details>
+        <summary>Configuración</summary>
+        <label for="folders">Carpetas donde OBS / vMix guardan los partidos (una por línea)</label>
+        <textarea id="folders"></textarea>
+        <div class="row" style="margin-top:6px"><button class="small" id="addFolder">Agregar carpeta…</button></div>
+        <label for="exportDir">Carpeta de exportación (vacío = datos/exportados)</label>
+        <div class="row"><input id="exportDir" style="flex:1"><button class="small" id="browseExport">Examinar</button></div>
+        <div class="row" style="margin-top:8px"><button class="blue" id="saveCfg" style="flex:1">Guardar</button></div>
+      </details>
+    </div>
+  </aside>
+  <section class="content" id="content">
+    <div class="box empty">Elegí un juego y analizalo, o abrí un análisis de la lista.</div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const state = { run: null, decisions: {}, selected: new Set(), focus: null, config: null };
+const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar' };
+const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo' };
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+  return j;
+}
+function toast(msg, ms = 3500) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', ms); }
+function fmt(s) { s = Math.max(0, s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = Math.floor(s % 60); return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ------------------------------------------------ config / videos / runs
+async function loadConfig() {
+  state.config = await api('/api/config');
+  $('#folders').value = (state.config.video_folders || []).join('\n');
+  $('#exportDir').value = state.config.export_dir || '';
+  const p = await api('/api/profiles');
+  $('#profile').innerHTML = p.profiles.map(x => `<option value="${esc(x.name)}" ${x.name === state.config.default_profile ? 'selected' : ''}>${esc(x.name)} — ${esc(x.sport)}</option>`).join('');
+}
+async function saveConfig() {
+  const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);
+  state.config = await api('/api/config', { video_folders: folders, export_dir: $('#exportDir').value.trim(), default_profile: $('#profile').value });
+  toast('Configuración guardada'); loadVideos();
+}
+async function loadVideos() {
+  const { videos } = await api('/api/videos');
+  const el = $('#videos');
+  if (!videos.length) { el.innerHTML = '<div class="muted">No hay videos en las carpetas configuradas. Revisá Configuración.</div>'; return; }
+  el.innerHTML = videos.map(v => `
+    <div class="item" title="${esc(v.path)}">
+      <input type="checkbox" data-path="${esc(v.path)}" ${state.selected.has(v.path) ? 'checked' : ''} ${v.recording ? 'disabled' : ''} style="width:auto">
+      <div><div class="name">${esc(v.name)}</div><div class="muted">${(v.sizeMb / 1024).toFixed(1)} GB · ${new Date(v.modified * 1000).toLocaleString()}</div></div>
+      <div>${v.recording ? '<span class="tag run">grabando</span>' : v.runId ? `<button class="small" data-open="${esc(v.runId)}">Abrir</button>` : ''}</div>
+    </div>`).join('');
+  $$('input[type=checkbox]', el).forEach(cb => cb.onchange = () => cb.checked ? state.selected.add(cb.dataset.path) : state.selected.delete(cb.dataset.path));
+  $$('[data-open]', el).forEach(b => b.onclick = () => openRun(b.dataset.open));
+}
+async function loadRuns() {
+  const { runs } = await api('/api/runs');
+  $('#runs').innerHTML = runs.length ? runs.map(r => `
+    <div class="item ${state.run && state.run.runId === r.runId ? 'active' : ''}">
+      <span class="tag ${r.reviewed >= r.clips ? 'ok' : ''}">${r.approved}✓</span>
+      <div style="cursor:pointer" data-open="${esc(r.runId)}"><div class="name">${esc(r.videoName)}</div>
+        <div class="muted">${r.clips} jugadas · revisadas ${r.reviewed}/${r.clips}${r.finalScore ? ' · ' + esc(r.finalScore) : ''}</div></div>
+      <button class="small danger" data-del="${esc(r.runId)}" title="Borrar análisis">✕</button>
+    </div>`).join('') : '<div class="muted">Todavía no hay análisis.</div>';
+  $$('[data-open]', $('#runs')).forEach(b => b.onclick = () => openRun(b.dataset.open));
+  $$('[data-del]', $('#runs')).forEach(b => b.onclick = async () => {
+    if (!confirm('¿Borrar este análisis y sus vistas previas? El video original no se toca.')) return;
+    await api('/api/delete-run', { runId: b.dataset.del });
+    if (state.run && state.run.runId === b.dataset.del) { state.run = null; $('#content').innerHTML = '<div class="box empty">Análisis borrado.</div>'; }
+    loadRuns(); loadVideos();
+  });
+}
+
+// ------------------------------------------------ jobs
+let jobsTimer = null;
+async function pollJobs() {
+  const { jobs } = await api('/api/jobs');
+  const active = jobs.filter(j => j.status === 'en cola' || j.status === 'analizando' || (Date.now() / 1000 - (j.finished || 0)) < 600);
+  $('#jobsBox').style.display = active.length ? '' : 'none';
+  $('#jobs').innerHTML = active.map(j => `
+    <div class="item" style="grid-template-columns:1fr auto">
+      <div><div class="name">${esc(j.name)}</div>
+        <div class="muted">${esc(j.error || j.message || j.status)}</div>
+        ${j.status === 'analizando' ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>` : ''}</div>
+      <div>${j.status === 'listo' ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
+    </div>`).join('');
+  $$('[data-open]', $('#jobs')).forEach(b => b.onclick = () => openRun(b.dataset.open));
+  const busy = jobs.some(j => j.status === 'en cola' || j.status === 'analizando');
+  if (state._busy && !busy) { loadRuns(); loadVideos(); }
+  state._busy = busy;
+  clearTimeout(jobsTimer); jobsTimer = setTimeout(pollJobs, busy ? 1500 : 6000);
+}
+async function analyzeSelected() {
+  if (!state.selected.size) return toast('Marcá uno o más juegos');
+  await api('/api/queue', { paths: [...state.selected], profile: $('#profile').value });
+  state.selected.clear(); loadVideos(); pollJobs();
+  toast('Agregado a la cola. Podés seguir revisando otro juego mientras tanto.');
+}
+
+// ------------------------------------------------ run view
+async function openRun(id) {
+  const run = await api('/api/run?id=' + encodeURIComponent(id));
+  state.run = run; state.decisions = run.decisions || {};
+  renderRun(); loadRuns();
+}
+function dec(id) { return state.decisions[id] || (state.decisions[id] = {}); }
+let saveTimer = null;
+function saveDecisions() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => api('/api/decisions', { runId: state.run.runId, decisions: state.decisions }).then(loadRuns).catch(e => toast('No se pudo guardar: ' + e.message)), 400);
+  renderHeaderStats();
+}
+function clipLen(c) { const d = dec(c.id); return c.duration + (d.extendStart || 0) + (d.extendEnd || 0) - (d.trimStart || 0) - (d.trimEnd || 0); }
+
+function renderRun() {
+  const r = state.run;
+  const byId = Object.fromEntries(r.clips.map(c => [c.id, c]));
+  $('#content').innerHTML = `
+    <div class="box">
+      <div class="runhead">
+        <div><div class="title">${esc(r.videoName)}</div><div class="muted">${fmt(r.duration)} de video · perfil ${esc(r.profile)}</div></div>
+        <div class="row">
+          <button id="reanalyze" title="Vuelve a armar la historia con la última versión del programa, sin leer el video de nuevo">Re-analizar</button>
+          <button id="approveSug">Aprobar sugeridos</button>
+          <button class="primary" id="exportBtn">Exportar aprobados</button>
+        </div>
+      </div>
+      <div class="stats" id="stats" style="margin-top:10px"></div>
+    </div>
+    <div class="innings" id="innings"></div>
+    ${r.halves.map(h => `
+      <div class="half" id="half-${h.key}">
+        <h2>${esc(h.label)} <span class="muted">${h.clips.length} jugada${h.clips.length === 1 ? '' : 's'} · ${fmt(h.start)}–${fmt(h.end)}</span></h2>
+        <div class="grid">${h.clips.map(id => cardHtml(byId[id])).join('')}</div>
+      </div>`).join('')}`;
+  $('#approveSug').onclick = () => { r.clips.forEach(c => { if (c.suggested && !dec(c.id).decision) dec(c.id).decision = 'approved'; }); saveDecisions(); refreshCards(); };
+  $('#exportBtn').onclick = exportApproved;
+  $('#reanalyze').onclick = async () => {
+    if (!confirm('Se arma un análisis nuevo con la lógica actual (no vuelve a leer el video completo). ¿Seguir?')) return;
+    await api('/api/reanalyze', { runId: r.runId }); pollJobs(); toast('Re-análisis en la cola');
+  };
+  $$('.card').forEach(bindCard);
+  renderHeaderStats();
+}
+function renderHeaderStats() {
+  const r = state.run; if (!r) return;
+  const ds = r.clips.map(c => dec(c.id).decision);
+  const ap = ds.filter(d => d === 'approved').length, rv = ds.filter(Boolean).length;
+  const secs = r.clips.filter(c => dec(c.id).decision === 'approved').reduce((a, c) => a + clipLen(c), 0);
+  $('#stats').innerHTML = `
+    <div class="stat">Final <b>${esc(r.stats.finalScore || '–')}</b></div>
+    <div class="stat"><b>${r.stats.halves}</b> medias entradas</div>
+    <div class="stat"><b>${r.clips.length}</b> jugadas</div>
+    <div class="stat"><b>${r.stats.carreras}</b> con carrera</div>
+    <div class="stat">Revisadas <b>${rv}/${r.clips.length}</b></div>
+    <div class="stat">Aprobadas <b>${ap}</b> · ${fmt(secs)}</div>`;
+  $('#innings').innerHTML = r.halves.map(h => {
+    const n = h.clips.length, done = h.clips.filter(id => dec(id).decision).length, ok = h.clips.filter(id => dec(id).decision === 'approved').length;
+    return `<span class="chip ${done === n ? 'done' : done ? 'partial' : ''}" data-go="${h.key}">${esc(h.label)} <span class="n">${ok}/${n}</span></span>`;
+  }).join('');
+  $$('[data-go]').forEach(c => c.onclick = () => document.getElementById('half-' + c.dataset.go).scrollIntoView({ behavior: 'smooth' }));
+}
+function cardHtml(c) {
+  const d = dec(c.id);
+  const src = c.file ? `/media/${encodeURIComponent(state.run.runId)}/${c.file}` : '';
+  const poster = c.poster ? `/media/${encodeURIComponent(state.run.runId)}/${c.poster}` : '';
+  return `
+  <div class="card ${d.decision || ''}" data-id="${c.id}" tabindex="0">
+    ${src ? `<video preload="none" controls src="${src}" poster="${poster}"></video>` : '<div class="empty">Sin vista previa</div>'}
+    <div class="body">
+      <div class="ctitle"><b>${c.id}. ${esc(c.title)}</b>
+        <span>${c.suggested ? '<span class="sug">sugerido</span> ' : ''}<span class="type t-${c.type}">${esc(TYPE_NAMES[c.type] || c.type)}</span></span></div>
+      <div class="muted">${esc(c.detail)}</div>
+      <div class="muted">${fmt(c.start)} · <span data-len>${clipLen(c).toFixed(1)}</span> s · ${esc(TIMING[c.timing] || c.timing)}${c.replay ? ' · con replay' : ''}</div>
+      <div class="row actions">
+        <button data-act="approved" class="${d.decision === 'approved' ? 'primary' : ''}">Aprobar</button>
+        <button data-act="rejected" class="danger">Descartar</button>
+      </div>
+      <details>
+        <summary>Ajustar corte</summary>
+        <div class="row" style="margin-top:6px"><span class="lbl">Inicio</span>
+          <button class="small" data-trim="trimStart" data-d="-0.5">−0.5</button><button class="small" data-trim="trimStart" data-d="0.5">+0.5</button>
+          <button class="small" data-ext="extendStart" data-d="5">−5 s</button><button class="small" data-ext="extendStart" data-d="10">−10 s</button><button class="small" data-ext="extendStart" data-d="20">−20 s</button></div>
+        <div class="row"><span class="lbl">Final</span>
+          <button class="small" data-trim="trimEnd" data-d="0.5">−0.5</button><button class="small" data-trim="trimEnd" data-d="-0.5">+0.5</button>
+          <button class="small" data-ext="extendEnd" data-d="5">+5 s</button><button class="small" data-ext="extendEnd" data-d="10">+10 s</button><button class="small" data-ext="extendEnd" data-d="20">+20 s</button></div>
+        <div class="row"><span class="muted" data-adj></span></div>
+        <div class="row"><button class="small" data-preview>Ver ajustado</button><button class="small" data-reset>Deshacer ajustes</button></div>
+      </details>
+    </div>
+  </div>`;
+}
+function adjText(c) {
+  const d = dec(c.id), p = [];
+  if (d.extendStart) p.push(`empieza ${d.extendStart}s antes`);
+  if (d.trimStart) p.push(`recorte inicio ${d.trimStart}s`);
+  if (d.extendEnd) p.push(`termina ${d.extendEnd}s después`);
+  if (d.trimEnd) p.push(`recorte final ${d.trimEnd}s`);
+  return p.join(' · ') || 'sin ajustes';
+}
+function refreshCards() { $$('.card').forEach(el => updateCard(el)); renderHeaderStats(); }
+function updateCard(el) {
+  const c = state.run.clips.find(x => x.id === el.dataset.id), d = dec(c.id);
+  el.classList.toggle('approved', d.decision === 'approved');
+  el.classList.toggle('rejected', d.decision === 'rejected');
+  $('[data-act=approved]', el).classList.toggle('primary', d.decision === 'approved');
+  $('[data-len]', el).textContent = clipLen(c).toFixed(1);
+  $('[data-adj]', el).textContent = adjText(c);
+}
+function setDecision(id, v) { const d = dec(id); d.decision = d.decision === v ? undefined : v; saveDecisions(); updateCard($(`.card[data-id="${id}"]`)); }
+function bindCard(el) {
+  const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el);
+  $$('[data-act]', el).forEach(b => b.onclick = () => setDecision(id, b.dataset.act));
+  $$('[data-trim]', el).forEach(b => b.onclick = () => {
+    const d = dec(id), k = b.dataset.trim; d[k] = Math.max(0, +((d[k] || 0) + +b.dataset.d).toFixed(2));
+    saveDecisions(); updateCard(el);
+    if (v) { v.currentTime = k === 'trimStart' ? d.trimStart : Math.max(0, c.duration - (d.trimEnd || 0) - 2); v.play(); }
+  });
+  $$('[data-ext]', el).forEach(b => b.onclick = () => { const d = dec(id), k = b.dataset.ext; d[k] = (d[k] || 0) + +b.dataset.d; saveDecisions(); updateCard(el); toast('Extensión anotada. Usá "Ver ajustado" para verla; la exportación ya la incluye.'); });
+  $('[data-reset]', el).onclick = () => { const d = dec(id); delete d.trimStart; delete d.trimEnd; delete d.extendStart; delete d.extendEnd; saveDecisions(); updateCard(el); if (v && c.file) { v.src = `/media/${encodeURIComponent(state.run.runId)}/${c.file}`; v._adjusted = false; } };
+  $('[data-preview]', el).onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Cortando…';
+    try { const r = await api('/api/render-adjusted', { runId: state.run.runId, clipId: id, decision: dec(id) }); if (v) { v.src = r.file; v._adjusted = true; v.play(); } }
+    catch (err) { toast(err.message); }
+    e.target.disabled = false; e.target.textContent = 'Ver ajustado';
+  };
+  if (v) {
+    v.addEventListener('play', () => { const d = dec(id); if (!v._adjusted && d.trimStart && v.currentTime < d.trimStart) v.currentTime = d.trimStart; });
+    v.addEventListener('timeupdate', () => { const d = dec(id); if (!v._adjusted && d.trimEnd && v.currentTime > c.duration - d.trimEnd) v.pause(); });
+  }
+  el.addEventListener('mouseenter', () => focusCard(el, false));
+  el.addEventListener('focus', () => focusCard(el, false));
+  updateCard(el);
+}
+function focusCard(el, scroll = true) {
+  $$('.card.focus').forEach(x => x.classList.remove('focus'));
+  el.classList.add('focus'); state.focus = el.dataset.id;
+  if (scroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+document.addEventListener('keydown', e => {
+  if (!state.run || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+  const cards = $$('.card'); const i = cards.findIndex(c => c.dataset.id === state.focus);
+  const cur = cards[i];
+  if (e.key === 'a' || e.key === 'A') { if (cur) setDecision(cur.dataset.id, 'approved'); }
+  else if (e.key === 'd' || e.key === 'D') { if (cur) setDecision(cur.dataset.id, 'rejected'); }
+  else if (e.key === ' ') { if (cur) { const v = $('video', cur); if (v) { e.preventDefault(); v.paused ? v.play() : v.pause(); } } }
+  else if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); if (cards[i + 1] || cards[0]) focusCard(cards[i + 1] || cards[0]); }
+  else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); if (i > 0) focusCard(cards[i - 1]); }
+});
+async function exportApproved() {
+  const n = state.run.clips.filter(c => dec(c.id).decision === 'approved').length;
+  if (!n) return toast('No hay jugadas aprobadas');
+  const btn = $('#exportBtn'); btn.disabled = true; btn.textContent = `Exportando ${n}…`;
+  try {
+    await api('/api/decisions', { runId: state.run.runId, decisions: state.decisions });
+    const r = await api('/api/export', { runId: state.run.runId });
+    toast(`Listo: ${r.count} clips en ${r.folder}` + (r.failed.length ? ` (fallaron: ${r.failed.join(', ')})` : ''), 9000);
+  } catch (err) { toast('Error al exportar: ' + err.message, 8000); }
+  btn.disabled = false; btn.textContent = 'Exportar aprobados';
+}
+
+// ------------------------------------------------ init
+$('#refreshVideos').onclick = loadVideos;
+$('#analyzeSel').onclick = analyzeSelected;
+$('#saveCfg').onclick = saveConfig;
+$('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };
+$('#browseExport').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20exportacion'); if (r.folder) $('#exportDir').value = r.folder; };
+(async () => { await loadConfig(); loadVideos(); loadRuns(); pollJobs(); })().catch(e => toast(e.message));
+</script>
+</body>
+</html>
