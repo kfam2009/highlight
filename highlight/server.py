@@ -108,7 +108,10 @@ def scan_runs():
 
 
 def run_path(run_id):
-    p = (runs_dir() / safe_name(run_id)).resolve()
+    # el id ya es seguro (lo genera el panel); solo se valida, sin recortarlo
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id or ""):
+        raise ValueError("runId invalido")
+    p = (runs_dir() / run_id).resolve()
     if runs_dir().resolve() not in p.parents:
         raise ValueError("runId invalido")
     return p
