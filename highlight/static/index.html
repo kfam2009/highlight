@@ -74,6 +74,7 @@
   .t-hit, .t-doble_play { background: rgba(46,144,250,.18); color: #a9d1ff; }
   .t-tercer_out { background: rgba(167,139,250,.18); color: #d5c8ff; }
   .t-revisar { background: rgba(245,158,11,.2); color: #ffd58a; }
+  .t-final { background: rgba(34,197,94,.2); color: #a7f3c0; }
   .sug { color: var(--amber); font-size: 11px; font-weight: 800; }
   .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .row .lbl { font-size: 11px; color: var(--muted); width: 52px; }
@@ -134,8 +135,8 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const state = { run: null, decisions: {}, selected: new Set(), focus: null, config: null };
-const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar' };
-const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo' };
+const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar', final: 'Final' };
+const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo', final: 'cierre del partido' };
 
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };

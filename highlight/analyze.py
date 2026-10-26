@@ -85,6 +85,23 @@ def build_clips(result):
             ids.append(cid)
         halves.append({"key": key, "label": half_label(h["inning"], h["half"]), "inning": h["inning"], "half": h["half"],
                        "start": h["start"], "end": h["end"], "clips": ids})
+    fin = result.get("final")
+    if fin:
+        n += 1
+        cid = f"{n:02d}"
+        sc = score_text(fin["after"])
+        clips.append({
+            "id": cid, "half": "FIN", "halfLabel": "Final", "type": "final",
+            "title": f"Final {sc}" if sc else "Final",
+            "detail": "última jugada, festejos, saludos y score final"
+                      + (" · ojo: la grabación parece cortarse antes del final" if fin.get("recordingCut") else ""),
+            "priority": fin["priority"], "suggested": True, "runs": 0,
+            "start": fin["start"], "end": fin["end"], "duration": round(fin["end"] - fin["start"], 2),
+            "pitchTime": fin["pitchTime"], "scorebugTime": fin["scorebugTime"], "replay": None,
+            "timing": "final", "sourceTime": hms(fin["start"]), "before": fin["before"], "after": fin["after"],
+        })
+        halves.append({"key": "FIN", "label": "Final", "inning": None, "half": None,
+                       "start": fin["start"], "end": fin["end"], "clips": [cid]})
     return clips, halves
 
 

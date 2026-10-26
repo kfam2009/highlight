@@ -344,6 +344,45 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
     }
 
 
+def final_segment(events, present, fps, gone_s=15.0):
+    """Clip de cierre: ultima jugada + festejos + saludos + score final.
+
+    Arranca en el lanzamiento de la ultima jugada. Para el final se busca
+    cuando el scorebug deja de verse un rato (la transmision pasa a festejos,
+    saludos y la placa de resultado) y se dejan ~75 s mas desde ahi.
+    """
+    if not events:
+        return None
+    last = events[-1]
+    vid_end = len(present) / fps
+    start = max(0.0, last["pitchTime"] - 5.0)
+    i0 = int((last["pitchTime"] + 20.0) * fps)
+    need = int(gone_s * fps)
+    run, t_gone = 0, None
+    for i in range(max(0, i0), len(present)):
+        if not present[i]:
+            run += 1
+            if run >= need:
+                t_gone = (i - run + 1) / fps
+                break
+        else:
+            run = 0
+    if t_gone is not None:
+        end = min(t_gone + 75.0, last["pitchTime"] + 210.0, vid_end)
+    else:
+        end = min(last["pitchTime"] + 150.0, vid_end)
+    end = max(end, min(vid_end, start + 30.0))
+    return {
+        "type": "final", "label": "Final: festejos, saludos y score", "priority": 95,
+        "runs": 0, "outs_gained": 0, "count_before": None, "half_changed": False, "batting": None,
+        "inning": last["inning"], "half": last["half"], "t": last["t"],
+        "before": last.get("after") or {}, "after": last.get("after") or {},
+        "pitchTime": last["pitchTime"], "start": round(start, 2), "end": round(end, 2),
+        "replay": None, "timing": "final", "scorebugTime": last.get("scorebugTime", last["t"]),
+        "videoEnd": round(vid_end, 2), "recordingCut": t_gone is None and vid_end - last["pitchTime"] < 150.0,
+    }
+
+
 def half_ranges(st, fps, min_len_s=20.0):
     """Tramos de tiempo de cada media entrada segun el scorebug.
     Tramos muy cortos (el operador cambia la entrada y la mitad en dos pasos)
@@ -418,5 +457,6 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4):
                 "pitchTime": h["start"], "start": h["start"], "end": min(h["end"], h["start"] + 80.0),
                 "replay": None, "timing": "tramo", "scorebugTime": h["start"],
             })
-    return {"story": story, "events": events, "mph": mph, "replays": blocks,
+    final = final_segment(events, raw["present"], fps)
+    return {"story": story, "events": events, "final": final, "mph": mph, "replays": blocks,
             "pitchMarks": pnum_changes(raw, fps)}
