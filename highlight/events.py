@@ -379,6 +379,8 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
         "replay": [round(float(rb[0]), 2), round(float(rb[1]), 2)] if rb else None,
         "timing": how,
         "scorebugTime": round(float(E), 2),
+        "searchEnd": round(float(search_end), 2),
+        "windowStart": round(float(w0), 2),
     }
 
 
