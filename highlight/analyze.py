@@ -45,6 +45,8 @@ def build_clips(result):
             cid = f"{n:02d}"
             b, a = e.get("before") or {}, e.get("after") or {}
             title = e["label"]
+            if e["type"] == "tercer_out" and e.get("strikeout"):
+                title = "3er out (posible ponche)"
             if e["type"] == "carrera" and e.get("runs") not in (0, None):
                 r = e["runs"]
                 title = "Carrera" if r == 1 else (f"{r} carreras" if r != "?" else "Carrera(s)")
@@ -71,6 +73,7 @@ def build_clips(result):
                 "priority": e["priority"],
                 "suggested": e["type"] in ("carrera", "hit", "doble_play") or (e["type"] == "tercer_out" and b.get("bases") not in (None, "000")),
                 "runs": e.get("runs"),
+                "strikeout": bool(e.get("strikeout")),
                 "start": e["start"],
                 "end": e["end"],
                 "duration": round(e["end"] - e["start"], 2),

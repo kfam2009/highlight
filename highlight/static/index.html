@@ -243,8 +243,10 @@ function renderRun() {
         <div><div class="title">${esc(r.videoName)}</div><div class="muted">${fmt(r.duration)} de video · perfil ${esc(r.profile)}</div></div>
         <div class="row">
           <button id="reanalyze" title="Vuelve a armar la historia con la última versión del programa, sin leer el video de nuevo">Re-analizar</button>
-          <button id="approveSug">Aprobar sugeridos</button>
-          <button class="primary" id="exportBtn">Exportar aprobados</button>
+          <button id="approveSug" title="Carreras, hits, doble plays, 3er out con corredores y el final">Aprobar sugeridos</button>
+          <button id="approveSugK" title="Sugeridos + los ponches que cierran una entrada">Sugeridos + ponches de cierre</button>
+          <button class="blue" id="xmlBtn" title="Archivo .xml para Premiere: la secuencia armada con el video original, sin renderizar">Línea para Premiere</button>
+          <button class="primary" id="exportBtn" title="Corta cada jugada aprobada como archivo .mp4">Exportar clips</button>
         </div>
       </div>
       <div class="stats" id="stats" style="margin-top:10px"></div>
@@ -257,6 +259,12 @@ function renderRun() {
       </div>`).join('')}`;
   $('#approveSug').onclick = () => { r.clips.forEach(c => { if (c.suggested && !dec(c.id).decision) dec(c.id).decision = 'approved'; }); saveDecisions(); refreshCards(); };
   $('#exportBtn').onclick = exportApproved;
+  $('#approveSugK').onclick = () => {
+    r.clips.forEach(c => { if ((c.suggested || isClosingK(c)) && !dec(c.id).decision) dec(c.id).decision = 'approved'; });
+    saveDecisions(); refreshCards();
+    toast(`Aprobadas: ${r.clips.filter(c => dec(c.id).decision === 'approved').length} jugadas`);
+  };
+  $('#xmlBtn').onclick = exportXml;
   $('#reanalyze').onclick = async () => {
     if (!confirm('Se arma un análisis nuevo con la lógica actual (no vuelve a leer el video completo). ¿Seguir?')) return;
     await api('/api/reanalyze', { runId: r.runId }); pollJobs(); toast('Re-análisis en la cola');
@@ -369,6 +377,20 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); if (cards[i + 1] || cards[0]) focusCard(cards[i + 1] || cards[0]); }
   else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); if (i > 0) focusCard(cards[i - 1]); }
 });
+function isClosingK(c) {
+  if (c.type !== 'tercer_out') return false;
+  if (c.strikeout !== undefined) return c.strikeout;
+  return /conteo \d-2/.test(c.detail || '');
+}
+async function exportXml() {
+  const n = state.run.clips.filter(c => dec(c.id).decision === 'approved').length;
+  if (!n) return toast('No hay jugadas aprobadas');
+  try {
+    await api('/api/decisions', { runId: state.run.runId, decisions: state.decisions });
+    const r = await api('/api/export-xml', { runId: state.run.runId });
+    toast(`Línea lista (${r.count} jugadas, ${fmt(r.seconds)}). En Premiere: Archivo → Importar → ${r.file}`, 15000);
+  } catch (err) { toast('Error: ' + err.message, 8000); }
+}
 async function exportApproved() {
   const n = state.run.clips.filter(c => dec(c.id).decision === 'approved').length;
   if (!n) return toast('No hay jugadas aprobadas');
@@ -378,7 +400,7 @@ async function exportApproved() {
     const r = await api('/api/export', { runId: state.run.runId });
     toast(`Listo: ${r.count} clips en ${r.folder}` + (r.failed.length ? ` (fallaron: ${r.failed.join(', ')})` : ''), 9000);
   } catch (err) { toast('Error al exportar: ' + err.message, 8000); }
-  btn.disabled = false; btn.textContent = 'Exportar aprobados';
+  btn.disabled = false; btn.textContent = 'Exportar clips';
 }
 
 // ------------------------------------------------ init

@@ -242,6 +242,7 @@ def classify(g, st, fps, t_prev):
         "batting": side,
         "inning": b["inning"],
         "half": half,
+        "strikeout": strikes == 2 and not runs and outs_gained == 1 and (half_changed or not bases_changed),
     }
 
 

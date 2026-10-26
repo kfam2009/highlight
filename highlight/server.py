@@ -246,6 +246,47 @@ def export_approved(run_id, folder=""):
     return {"folder": str(out_dir), "count": len(done), "failed": failed}
 
 
+def export_dir_for(m, folder=""):
+    cfg = load_config()
+    if folder:
+        out_dir = Path(folder).expanduser()
+    elif cfg.get("export_dir"):
+        out_dir = Path(cfg["export_dir"]).expanduser() / safe_name(Path(m["videoName"]).stem)
+    else:
+        out_dir = Path(cfg["data_dir"]) / "exportados" / safe_name(Path(m["videoName"]).stem)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def export_sequence(run_id, folder=""):
+    """Secuencia XML para Premiere con los aprobados, apuntando al original."""
+    from .premiere import build_sequence
+
+    m = load_run(run_id)
+    dec = m["decisions"]
+    video = Path(m["video"])
+    if not video.exists():
+        raise FileNotFoundError(f"No encuentro el video original: {video}")
+    items = []
+    for c in m["clips"]:
+        d = dec.get(c["id"]) or {}
+        if d.get("decision") != "approved":
+            continue
+        start, length = adjusted_window(c, d)
+        items.append({"start": start, "length": length,
+                      "title": f"{c['id']} {c['halfLabel']} - {c['title']}",
+                      "marker": " · ".join(x for x in [c["halfLabel"], c["title"], c.get("detail", "")] if x)})
+    if not items:
+        raise ValueError("No hay jugadas aprobadas")
+    out_dir = export_dir_for(m, folder)
+    name = f"Highlights {Path(m['videoName']).stem}"
+    xml = build_sequence(name, video, items)
+    dest = out_dir / f"{safe_name(Path(m['videoName']).stem)}_highlights.xml"
+    dest.write_text(xml, encoding="utf-8")
+    total = sum(i["length"] for i in items)
+    return {"file": str(dest), "folder": str(out_dir), "count": len(items), "seconds": round(total, 1)}
+
+
 def render_adjusted(run_id, clip_id, decision):
     m = load_run(run_id)
     c = next(c for c in m["clips"] if c["id"] == clip_id)
@@ -350,6 +391,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(save_decisions(body["runId"], body.get("decisions") or {}))
             if u.path == "/api/export":
                 return self.send_json(export_approved(body["runId"], body.get("folder", "")))
+            if u.path == "/api/export-xml":
+                return self.send_json(export_sequence(body["runId"], body.get("folder", "")))
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {}))
             if u.path == "/api/delete-run":
