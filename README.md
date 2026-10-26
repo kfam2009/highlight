@@ -57,14 +57,30 @@ video original ──(1 pasada de ffmpeg)──► scorebug 5 fps · imagen 64x3
 - Si aparece un número que el perfil no conoce (por ejemplo una carrera 7),
   igual se detecta el **cambio**; solo se muestra el valor como `?`.
 
+## Línea para Premiere
+
+**Línea para Premiere** genera `<partido>_highlights.xml` en la carpeta de
+exportación. En Premiere: *Archivo → Importar* ese archivo y aparece la
+secuencia armada en orden, cada jugada como un clip del video original (sin
+renderizar) con un marcador que dice entrada, jugada y marcador. Como apunta
+al original, cualquier corte se puede estirar en la línea de tiempo.
+**Sugeridos + ponches de cierre** aprueba de una vez lo sugerido más los
+ponches que terminan una entrada.
+
 ## Perfiles de scorebug
 
 Cada diseño de gráfico es un perfil en `highlight/profiles/<nombre>/`:
 posición de cada dato, plantillas de los números, la imagen de referencia
 para saber si el scorebug está en pantalla y la placa de los replays.
-`on_softball` está calibrado con el partido del 15/08/2026 (dos campos, mismo
-gráfico). Si cambia el diseño (otro torneo, béisbol con otro gráfico), hace
-falta un perfil nuevo: con un partido de muestra se arma igual que este.
+Perfiles incluidos:
+
+- `on_softball`: el gráfico del partido del 15/08/2026 (dos campos, mismo gráfico).
+- `wbsc_softball`: el gráfico de la WBSC (Mundial), calibrado con la final NZL-VEN.
+
+Con **Automático** el panel saca unas fotos del video, busca cuál de los
+scorebugs aparece y dónde está (aunque esté corrido o en otro tamaño) y ajusta
+el recorte solo. Cambiar de campo no requiere nada; un diseño de gráfico
+nuevo sí necesita un perfil nuevo (se arma con un partido de muestra).
 
 ## Consola
 

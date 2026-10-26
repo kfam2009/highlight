@@ -66,7 +66,36 @@ def stable(seq, minrun=5):
 
 
 def smooth_state(raw):
-    return {k: stable(raw[k]) for k in ALL_FIELDS}
+    st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    cut = game_end_index(st)
+    if cut is not None:
+        for k in ALL_FIELDS:
+            st[k] = st[k][:cut] + [None] * (len(st[k]) - cut)
+    return st
+
+
+def game_end_index(st):
+    """Despues del partido muchas transmisiones pasan un resumen con el
+    scorebug de jugadas viejas. Se corta en el primer momento en que la
+    entrada o las carreras vuelven para atras."""
+    best = {"inning": 0, "away": 0, "home": 0}
+    half_rank = {"T": 0, "B": 1}
+    last_pos = (0, 0)
+    for i in range(len(st["inning"])):
+        inn = _num(st["inning"][i])
+        h = st["half"][i]
+        if inn is not None and h in half_rank:
+            pos = (inn, half_rank[h])
+            if pos < last_pos and last_pos[0] - inn >= 1:
+                return i
+            last_pos = max(last_pos, pos)
+        for k in ("away", "home"):
+            v = _num(st[k][i])
+            if v is not None:
+                if v < best[k]:
+                    return i
+                best[k] = max(best[k], v)
+    return None
 
 
 def onsets(flags, fps, min_gap_s=3.0):
@@ -305,9 +334,11 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
     """
     E = ev["t"]
     w0 = max(t_prev + 2.0, E - 300.0)
+    # un replay que arranca enseguida del cambio anterior es de la jugada anterior
+    rw0 = max(w0, t_prev + 20.0) if t_prev > 0 else w0
     rb = None
     for a, b in stingers_blocks:
-        if w0 <= a <= E:
+        if rw0 <= a <= E:
             rb = (a, b)
             break
     search_end = rb[0] if rb else E
@@ -325,8 +356,14 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
         pitch = m - 2.0
         how = "mph"
     else:
-        pitch = search_end - 15.0
+        pitch = search_end - (14.0 if rb else 15.0)
     pitch = max(w0 - 2.0, pitch)
+    if not rb:
+        # replay que llega despues del cambio del scorebug (graficos que actualizan rapido)
+        for a, b in stingers_blocks:
+            if E < a <= E + 20.0 and a - pitch < 45.0:
+                rb = (a, b)
+                break
     big = ev["type"] in ("carrera", "hit", "doble_play")
     start = max(0.0, pitch - 5.0)
     live_end = pitch + (20.0 if big else 12.0)
@@ -345,20 +382,20 @@ def time_play(ev, t_prev, mph, stingers_blocks, audio_rms, audio_rate, audio_thr
     }
 
 
-def final_segment(events, present, fps, gone_s=15.0):
-    """Clip de cierre: ultima jugada + festejos + saludos + score final.
+def final_segment(events, present, fps, mph=None, game_over_s=60.0):
+    """Clip de cierre: ultimo lanzamiento + festejos + saludos + score final.
 
-    Arranca en el lanzamiento de la ultima jugada. Para el final se busca
-    cuando el scorebug deja de verse un rato (la transmision pasa a festejos,
-    saludos y la placa de resultado) y se dejan ~75 s mas desde ahi.
+    Cuando termina el partido la transmision saca el scorebug por un buen rato
+    (festejos, saludos, tabla de resultado). Ese hueco largo marca el final:
+    el ultimo lanzamiento esta justo antes, y el clip sigue ~2 minutos para
+    cubrir festejos, saludos y la placa con el score final.
     """
     if not events:
         return None
     last = events[-1]
     vid_end = len(present) / fps
-    start = max(0.0, last["pitchTime"] - 5.0)
-    i0 = int((last["pitchTime"] + 20.0) * fps)
-    need = int(gone_s * fps)
+    i0 = int(last["pitchTime"] * fps)
+    need = int(game_over_s * fps)
     run, t_gone = 0, None
     for i in range(max(0, i0), len(present)):
         if not present[i]:
@@ -369,18 +406,26 @@ def final_segment(events, present, fps, gone_s=15.0):
         else:
             run = 0
     if t_gone is not None:
-        end = min(t_gone + 75.0, last["pitchTime"] + 210.0, vid_end)
+        m = _last_in(mph or [], t_gone - 20.0, t_gone)
+        pitch = (m - 2.0) if m is not None else t_gone - 8.0
+        pitch = max(pitch, last["pitchTime"])
+        start = max(0.0, pitch - 5.0)
+        end = min(t_gone + 120.0, vid_end)
+        cut = False
     else:
-        end = min(last["pitchTime"] + 150.0, vid_end)
-    end = max(end, min(vid_end, start + 30.0))
+        # el video termina antes de que la transmision salga del juego
+        pitch = last["pitchTime"]
+        start = max(0.0, pitch - 5.0)
+        end = min(pitch + 150.0, vid_end)
+        cut = vid_end - pitch < 150.0
     return {
         "type": "final", "label": "Final: festejos, saludos y score", "priority": 95,
         "runs": 0, "outs_gained": 0, "count_before": None, "half_changed": False, "batting": None,
         "inning": last["inning"], "half": last["half"], "t": last["t"],
         "before": last.get("after") or {}, "after": last.get("after") or {},
-        "pitchTime": last["pitchTime"], "start": round(start, 2), "end": round(end, 2),
+        "pitchTime": round(pitch, 2), "start": round(start, 2), "end": round(end, 2),
         "replay": None, "timing": "final", "scorebugTime": last.get("scorebugTime", last["t"]),
-        "videoEnd": round(vid_end, 2), "recordingCut": t_gone is None and vid_end - last["pitchTime"] < 150.0,
+        "videoEnd": round(vid_end, 2), "recordingCut": cut,
     }
 
 
@@ -414,12 +459,36 @@ def half_ranges(st, fps, min_len_s=20.0):
     return clean
 
 
-def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4):
+def absence_replays(raw, st, fps, min_s=3.0, max_s=45.0):
+    """Graficos que sacan el scorebug durante los replays: un hueco corto en
+    medio de una misma media entrada se toma como replay (inicio, fin)."""
+    pres = raw["present"]
+    out, i, n = [], 0, len(pres)
+    while i < n:
+        if pres[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and not pres[j]:
+            j += 1
+        dur = (j - i) / fps
+        if min_s <= dur <= max_s and i > 0 and j < n:
+            before = (st["inning"][i - 1], st["half"][i - 1])
+            after = (st["inning"][j], st["half"][j])
+            if before == after and None not in before:
+                out.append((i / fps, j / fps))
+        i = j
+    return out
+
+
+def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_from_absence=False):
     fps = raw["fps"]
     st = smooth_state(raw)
     mph = onsets(raw["mph"], fps)
     stingers = ctx_stingers or []
     blocks = replay_blocks(stingers)
+    if replay_from_absence:
+        blocks = sorted(blocks + absence_replays(raw, st, fps))
     audio_thr = float(np.percentile(audio_rms, 97)) if audio_rms is not None and len(audio_rms) else None
 
     groups = group_changes(raw_changes(st, fps))
@@ -458,6 +527,6 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4):
                 "pitchTime": h["start"], "start": h["start"], "end": min(h["end"], h["start"] + 80.0),
                 "replay": None, "timing": "tramo", "scorebugTime": h["start"],
             })
-    final = final_segment(events, raw["present"], fps)
+    final = final_segment(events, raw["present"], fps, mph)
     return {"story": story, "events": events, "final": final, "mph": mph, "replays": blocks,
             "pitchMarks": pnum_changes(raw, fps)}

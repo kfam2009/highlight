@@ -1,0 +1,127 @@
+{
+  "name": "wbsc_softball",
+  "description": "Grafico WBSC (Mundial de softbol): scorebug abajo a la derecha con equipos y carreras, rombo de bases amarillo, entrada con flecha, conteo, outs y velocidad en la pestana inferior. Calibrado con la final NZL-VEN.",
+  "sport": "softball",
+  "crop": {
+    "x": 0.7,
+    "y": 0.66,
+    "w": 0.3,
+    "h": 0.34
+  },
+  "crop_size": [
+    576,
+    366
+  ],
+  "fps": 5,
+  "presence_threshold": 15,
+  "glyph_threshold": 140,
+  "regions": {
+    "away": [
+      280,
+      138,
+      347,
+      175
+    ],
+    "home": [
+      280,
+      178,
+      347,
+      213
+    ],
+    "inning_half": [
+      185,
+      220,
+      277,
+      248
+    ],
+    "count": [
+      298,
+      220,
+      352,
+      248
+    ],
+    "outs": [
+      372,
+      220,
+      470,
+      248
+    ]
+  },
+  "glyph_fields": {
+    "away": {
+      "set": "score",
+      "invert": true,
+      "binarize": "normalized",
+      "match": "ink",
+      "ratio": 0.25
+    },
+    "home": {
+      "set": "score",
+      "invert": true,
+      "binarize": "normalized",
+      "match": "ink",
+      "ratio": 0.25
+    },
+    "inning_half": {
+      "set": "inning_half",
+      "invert": true,
+      "binarize": "normalized",
+      "match": "ink",
+      "ratio": 0.1
+    },
+    "count": {
+      "set": "count",
+      "invert": true,
+      "binarize": "normalized",
+      "match": "ink",
+      "ratio": 0.15
+    },
+    "outs": {
+      "set": "outs",
+      "invert": true,
+      "binarize": "normalized",
+      "match": "ink",
+      "ratio": 0.25
+    }
+  },
+  "bases_rule": "yellow",
+  "mph": {
+    "rule": "region_diff",
+    "region": [
+      215,
+      260,
+      415,
+      303
+    ],
+    "thr": 25
+  },
+  "replay_from_absence": true,
+  "points": {
+    "base1": [
+      450,
+      168
+    ],
+    "base2": [
+      422,
+      148
+    ],
+    "base3": [
+      395,
+      168
+    ]
+  },
+  "locate_exclude": [
+    [
+      105,
+      120,
+      280,
+      218
+    ],
+    [
+      230,
+      40,
+      380,
+      120
+    ]
+  ]
+}

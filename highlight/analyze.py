@@ -117,6 +117,19 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         if on_progress:
             on_progress(stage, float(frac), msg)
 
+    duration = probe_duration(video) or 0
+    picked = None
+    if profile_name in (None, "", "auto"):
+        from .locate import pick_profile
+        from .scorebug import list_profiles
+
+        prog("extraer", 0, "Buscando qué scorebug tiene el video")
+        names = [p["name"] for p in list_profiles()]
+        name, crop0, info0 = pick_profile(video, duration, names)
+        if not name:
+            raise RuntimeError("No reconozco el scorebug de este video con ningun perfil. "
+                               "Hace falta armar un perfil nuevo para este grafico.")
+        profile_name, picked = name, (crop0, info0)
     profile = Profile(profile_name)
     run_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{safe_name(video.stem)}"
     run_dir = Path(runs_dir) / run_id
@@ -124,7 +137,6 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     clip_dir = run_dir / "clips"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    duration = probe_duration(video) or 0
     t0 = time.time()
     if reuse_work:
         # re-analizar sin volver a leer el video (por ejemplo con una version
@@ -132,9 +144,20 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         import shutil
         shutil.copytree(reuse_work, work, dirs_exist_ok=True)
     else:
-        prog("extraer", 0, "Leyendo el partido (scorebug, audio, imagen)")
-        extract(video, work, profile, duration, lambda f: prog("extraer", f * 0.6))
+        from .locate import locate
+
+        if picked:
+            crop, loc_info = picked
+        else:
+            prog("extraer", 0, "Buscando el scorebug en la imagen")
+            crop, loc_info = locate(video, profile, duration)
+        if loc_info.get("status") == "no encontrado":
+            prog("extraer", 0, "No encontre el scorebug en las fotos de prueba; uso la posicion del perfil")
+        prog("extraer", 0.01, "Leyendo el partido (scorebug, audio, imagen)")
+        extract(video, work, profile, duration, lambda f: prog("extraer", f * 0.6), crop=crop)
     t_extract = time.time() - t0
+    if not reuse_work:
+        (work / "ubicacion_scorebug.json").write_text(json.dumps(loc_info), encoding="utf-8")
 
     prog("scorebug", 0.6, "Leyendo el scorebug")
     raw = read_scorebug_video(work / "scorebug.mp4", profile, lambda f: prog("scorebug", 0.6 + f * 0.15))
@@ -145,7 +168,8 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     ctx = load_context(work)
     stingers = find_stingers(ctx, profile.stinger)
     rms = load_audio_rms(work)
-    result = ev_mod.build_story(raw, stingers, rms, RMS_RATE)
+    result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
+                                replay_from_absence=bool(profile.cfg.get("replay_from_absence")))
     clips, halves = build_clips(result)
 
     if render_previews:
@@ -167,6 +191,7 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         "duration": duration,
         "created": time.time(),
         "timings": {"extraer_s": round(t_extract, 1), "total_s": round(time.time() - t0, 1)},
+        "scorebugLocation": _read_json(work / "ubicacion_scorebug.json"),
         "stats": {
             "halves": len(halves),
             "clips": len(clips),
@@ -188,6 +213,13 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False, default=_np), encoding="utf-8")
     prog("listo", 1.0, "Listo")
     return manifest
+
+
+def _read_json(p):
+    try:
+        return json.loads(Path(p).read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def _np(o):

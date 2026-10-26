@@ -155,7 +155,7 @@ async function loadConfig() {
   $('#folders').value = (state.config.video_folders || []).join('\n');
   $('#exportDir').value = state.config.export_dir || '';
   const p = await api('/api/profiles');
-  $('#profile').innerHTML = p.profiles.map(x => `<option value="${esc(x.name)}" ${x.name === state.config.default_profile ? 'selected' : ''}>${esc(x.name)} — ${esc(x.sport)}</option>`).join('');
+  $('#profile').innerHTML = `<option value="auto" ${state.config.default_profile === 'auto' ? 'selected' : ''}>Automático (busca el scorebug)</option>` + p.profiles.map(x => `<option value="${esc(x.name)}" ${x.name === state.config.default_profile ? 'selected' : ''}>${esc(x.name)} — ${esc(x.sport)}</option>`).join('');
 }
 async function saveConfig() {
   const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);

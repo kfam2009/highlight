@@ -31,7 +31,7 @@ DEFAULT_CONFIG = {
     "video_folders": [str(Path.home() / "Videos" / "Highlight Videos")],
     "data_dir": str(REPO / "datos"),
     "export_dir": "",
-    "default_profile": "on_softball",
+    "default_profile": "auto",
 }
 
 

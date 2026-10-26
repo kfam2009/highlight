@@ -20,10 +20,10 @@ AUDIO_RATE = 8000
 RMS_RATE = 4  # valores de volumen por segundo
 
 
-def extract(video, out_dir, profile, duration=None, on_progress=None):
+def extract(video, out_dir, profile, duration=None, on_progress=None, crop=None):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    c = profile.crop
+    c = crop or profile.crop
     W, H = profile.crop_size
     crop = (f"crop=trunc(iw*{c['w']}/2)*2:trunc(ih*{c['h']}/2)*2:trunc(iw*{c['x']}):trunc(ih*{c['y']}),"
             f"scale={W}:{H}")

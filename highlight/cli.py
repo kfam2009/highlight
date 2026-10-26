@@ -13,7 +13,7 @@ from .server import runs_dir
 def main():
     ap = argparse.ArgumentParser(description="Analiza un partido grabado y arma los candidatos por media entrada")
     ap.add_argument("video")
-    ap.add_argument("--perfil", default="on_softball")
+    ap.add_argument("--perfil", default="auto")
     ap.add_argument("--sin-previas", action="store_true", help="no cortar vistas previas")
     a = ap.parse_args()
     t = time.time()
