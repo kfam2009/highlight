@@ -78,8 +78,6 @@ def build_clips(result):
                 "end": e["end"],
                 "duration": round(e["end"] - e["start"], 2),
                 "pitchTime": e["pitchTime"],
-                "wideStart": e.get("wideStart", e["start"]),
-                "wideEnd": e.get("wideEnd", e["end"]),
                 "scorebugTime": e["scorebugTime"],
                 "replay": e.get("replay"),
                 "timing": e["timing"],
@@ -172,14 +170,6 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     rms = load_audio_rms(work)
     result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
                                 replay_from_absence=bool(profile.cfg.get("replay_from_absence")))
-    # corte ajustado "listo para mandar": desde el pitcher hasta que se resuelve la jugada
-    from .tight import pitchcam_distance, tight_window
-    dist = pitchcam_distance(ctx, result["mph"])
-    for e in result["events"]:
-        e["wideStart"], e["wideEnd"] = e["start"], e["end"]
-        w = tight_window(e, dist, result["replays"])
-        if w:
-            e["start"], e["end"] = w
     clips, halves = build_clips(result)
 
     if render_previews:
