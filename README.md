@@ -22,8 +22,11 @@ para Premiere.
      **↑ ↓** para moverse, **espacio** para reproducir).
    - **Aprobar sugeridos** marca de una vez carreras, hits, doble plays y
      terceros outs con corredores en base.
-   - **Ajustar corte**: recortar ±0.5 s o extender 5/10/20 s antes o
-     después. "Ver ajustado" corta una vista previa nueva desde el original.
+   - **Marcar inicio / fin** (teclas **I** / **O**) en el punto exacto del
+     video. La vista previa trae 15 s de más a cada lado para poder marcar por
+     fuera del corte sugerido; **Alargar 10 s** estira el video en el mismo
+     cuadro si hace falta más. **Ver jugada** (tecla **P**) reproduce de
+     inicio a fin. Las vistas previas vienen muteadas.
 5. **Exportar aprobados**: corta cada clip desde el video original (buena
    calidad) y deja en la carpeta `orden_para_premiere.txt` con el orden.
 

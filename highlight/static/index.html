@@ -68,6 +68,10 @@
   .card.rejected { opacity: .5; }
   .card.focus { outline: 2px solid var(--blue); }
   .card video { width: 100%; aspect-ratio: 16/9; background: #000; display: block; }
+  .tl { position: relative; height: 12px; background: #1d2636; cursor: pointer; }
+  .tl-play { position: absolute; top: 0; bottom: 0; background: rgba(34,197,94,.55); border-left: 2px solid var(--green); border-right: 2px solid var(--green); }
+  .tl-pos { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; }
+  .row.io button { flex: 1; }
   .card .body { padding: 9px 10px; display: grid; gap: 6px; }
   .ctitle { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
   .ctitle b { font-size: 14px; }
@@ -95,7 +99,7 @@
       <div><div class="eyebrow">Softball / béisbol</div><h1>Highlights</h1></div>
     </div>
     <div class="row">
-      <span class="kbd">Teclas sobre un clip: A aprobar · D descartar · espacio reproducir · ↑↓ moverse</span>
+      <span class="kbd">Teclas sobre un clip: I inicio · O fin · P ver jugada · A aprobar · D descartar · espacio play · ↑↓ moverse</span>
     </div>
   </div>
 </header>
@@ -265,7 +269,20 @@ function saveDecisions() {
   saveTimer = setTimeout(() => api('/api/decisions', { runId: state.run.runId, decisions: state.decisions }).then(loadRuns).catch(e => toast('No se pudo guardar: ' + e.message)), 400);
   renderHeaderStats();
 }
-function clipLen(c) { const d = dec(c.id); return c.duration + (d.extendStart || 0) + (d.extendEnd || 0) - (d.trimStart || 0) - (d.trimEnd || 0); }
+// inicio / fin de la jugada en segundos del video original
+function inOut(c) {
+  const d = dec(c.id);
+  if (d.inTime != null || d.outTime != null) return [d.inTime ?? c.start, d.outTime ?? c.end];
+  return [c.start - (d.extendStart || 0) + (d.trimStart || 0), c.end + (d.extendEnd || 0) - (d.trimEnd || 0)];
+}
+function clipLen(c) { const [a, b] = inOut(c); return b - a; }
+// tramo que cubre la vista previa cargada en el cuadro
+function previewRange(c) {
+  const d = dec(c.id);
+  if (d.preview) return [d.preview.start, d.preview.end, d.preview.file];
+  const src = c.file ? `/media/${encodeURIComponent(state.run.runId)}/${c.file}` : '';
+  return [c.previewStart ?? c.start, c.previewEnd ?? c.end, src];
+}
 
 function renderRun() {
   const r = state.run;
@@ -340,41 +357,33 @@ function renderHeaderStats() {
 }
 function cardHtml(c) {
   const d = dec(c.id);
-  const src = c.file ? `/media/${encodeURIComponent(state.run.runId)}/${c.file}` : '';
+  const [p0, p1, src] = previewRange(c);
   const poster = c.poster ? `/media/${encodeURIComponent(state.run.runId)}/${c.poster}` : '';
   return `
   <div class="card ${d.decision || ''}" data-id="${c.id}" tabindex="0">
-    ${src ? `<video preload="none" controls src="${src}" poster="${poster}"></video>` : '<div class="empty">Sin vista previa</div>'}
+    ${src ? `<video preload="metadata" controls muted src="${src}" poster="${poster}"></video>
+    <div class="tl" data-tl title="Clic para ir a ese momento"><div class="tl-play"></div><div class="tl-pos"></div></div>` : '<div class="empty">Sin vista previa</div>'}
     <div class="body">
       <div class="ctitle"><b>${c.id}. ${esc(c.title)}</b>
         <span>${c.suggested ? '<span class="sug">sugerido</span> ' : ''}<span class="type t-${c.type}">${esc(TYPE_NAMES[c.type] || c.type)}</span></span></div>
       <div class="muted">${esc(c.detail)}</div>
-      <div class="muted">${fmt(c.start)} · <span data-len>${clipLen(c).toFixed(1)}</span> s · ${esc(TIMING[c.timing] || c.timing)}${c.replay ? ' · con replay' : ''}</div>
+      <div class="muted" data-io></div>
+      ${src ? `<div class="row io">
+        <button class="small" data-mark="in" title="Tecla I">⟦ Marcar inicio</button>
+        <button class="small" data-play title="Tecla P">▶ Ver jugada</button>
+        <button class="small" data-mark="out" title="Tecla O">Marcar fin ⟧</button>
+      </div>
+      <div class="row io">
+        <button class="small" data-more="-10">◀ Alargar 10 s antes</button>
+        <button class="small" data-more="10">Alargar 10 s después ▶</button>
+        <button class="small" data-reset title="Volver al corte que sugirió el panel">Original</button>
+      </div>` : ''}
       <div class="row actions">
         <button data-act="approved" class="${d.decision === 'approved' ? 'primary' : ''}">Aprobar</button>
         <button data-act="rejected" class="danger">Descartar</button>
       </div>
-      <details>
-        <summary>Ajustar corte</summary>
-        <div class="row" style="margin-top:6px"><span class="lbl">Inicio</span>
-          <button class="small" data-trim="trimStart" data-d="-0.5">−0.5</button><button class="small" data-trim="trimStart" data-d="0.5">+0.5</button>
-          <button class="small" data-ext="extendStart" data-d="5">−5 s</button><button class="small" data-ext="extendStart" data-d="10">−10 s</button><button class="small" data-ext="extendStart" data-d="20">−20 s</button></div>
-        <div class="row"><span class="lbl">Final</span>
-          <button class="small" data-trim="trimEnd" data-d="0.5">−0.5</button><button class="small" data-trim="trimEnd" data-d="-0.5">+0.5</button>
-          <button class="small" data-ext="extendEnd" data-d="5">+5 s</button><button class="small" data-ext="extendEnd" data-d="10">+10 s</button><button class="small" data-ext="extendEnd" data-d="20">+20 s</button></div>
-        <div class="row"><span class="muted" data-adj></span></div>
-        <div class="row"><button class="small" data-preview>Ver ajustado</button><button class="small" data-reset>Deshacer ajustes</button></div>
-      </details>
     </div>
   </div>`;
-}
-function adjText(c) {
-  const d = dec(c.id), p = [];
-  if (d.extendStart) p.push(`empieza ${d.extendStart}s antes`);
-  if (d.trimStart) p.push(`recorte inicio ${d.trimStart}s`);
-  if (d.extendEnd) p.push(`termina ${d.extendEnd}s después`);
-  if (d.trimEnd) p.push(`recorte final ${d.trimEnd}s`);
-  return p.join(' · ') || 'sin ajustes';
 }
 function refreshCards() { $$('.card').forEach(el => updateCard(el)); renderHeaderStats(); }
 function updateCard(el) {
@@ -382,29 +391,78 @@ function updateCard(el) {
   el.classList.toggle('approved', d.decision === 'approved');
   el.classList.toggle('rejected', d.decision === 'rejected');
   $('[data-act=approved]', el).classList.toggle('primary', d.decision === 'approved');
-  $('[data-len]', el).textContent = clipLen(c).toFixed(1);
-  $('[data-adj]', el).textContent = adjText(c);
+  const [a, b] = inOut(c);
+  const marked = d.inTime != null || d.outTime != null;
+  $('[data-io]', el).innerHTML = `Jugada: <b>${fmt(a)}</b> → <b>${fmt(b)}</b> · ${(b - a).toFixed(1)} s` +
+    (marked ? ' · <span style="color:var(--green)">marcada</span>' : ` · ${esc(TIMING[c.timing] || c.timing)}${c.replay ? ' · con replay' : ''}`);
+  paintTimeline(el, c);
 }
-function setDecision(id, v) { const d = dec(id); d.decision = d.decision === v ? undefined : v; saveDecisions(); updateCard($(`.card[data-id="${id}"]`)); }
+function paintTimeline(el, c) {
+  const tl = $('[data-tl]', el); if (!tl) return;
+  const [p0, p1] = previewRange(c), [a, b] = inOut(c), w = Math.max(0.1, p1 - p0);
+  const L = Math.max(0, Math.min(100, (a - p0) / w * 100)), R = Math.max(0, Math.min(100, (b - p0) / w * 100));
+  const bar = $('.tl-play', tl); bar.style.left = L + '%'; bar.style.width = Math.max(0.5, R - L) + '%';
+  const v = $('video', el);
+  if (v) $('.tl-pos', tl).style.left = Math.max(0, Math.min(100, (v.currentTime || 0) / w * 100)) + '%';
+}
+function markPoint(el, which) {
+  const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el); if (!v) return;
+  const [p0] = previewRange(c), t = +(p0 + v.currentTime).toFixed(2), d = dec(id), [a, b] = inOut(c);
+  if (which === 'in') { d.inTime = t; d.outTime = Math.max(b, t + 1); }
+  else { d.outTime = t; d.inTime = Math.min(a, t - 1); }
+  saveDecisions(); updateCard(el);
+  toast(which === 'in' ? `Inicio marcado en ${fmt(t)}` : `Fin marcado en ${fmt(t)}`, 1500);
+}
+function playPlay(el) {
+  const c = state.run.clips.find(x => x.id === el.dataset.id), v = $('video', el); if (!v) return;
+  const [p0] = previewRange(c), [a, b] = inOut(c);
+  v._stopAt = b - p0; v.currentTime = Math.max(0, a - p0); v.play();
+}
+async function extendPreview(el, secs) {
+  const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el), d = dec(id);
+  const [p0, p1] = previewRange(c), [a, b] = inOut(c);
+  const r0 = secs < 0 ? Math.max(0, p0 + secs) : p0, r1 = secs > 0 ? p1 + secs : p1;
+  const btns = $$('[data-more]', el); btns.forEach(x => x.disabled = true);
+  try {
+    const r = await api('/api/render-adjusted', { runId: state.run.runId, clipId: id, range: [r0, r1] });
+    d.preview = { file: r.file, start: r.start, end: r.end };
+    // el corte se estira hacia ese lado; despues se marca el punto justo
+    if (secs < 0) d.inTime = Math.max(r.start, a + secs); else d.outTime = Math.min(r.end, b + secs);
+    if (d.inTime == null) d.inTime = a; if (d.outTime == null) d.outTime = b;
+    saveDecisions();
+    const keep = secs < 0 ? 0 : (v ? v.currentTime + (p0 - r.start) : 0);
+    v.src = r.file; v.muted = true;
+    v.addEventListener('loadedmetadata', () => { v.currentTime = secs < 0 ? 0 : Math.max(0, (b - r.start) - 2); v.play(); }, { once: true });
+    updateCard(el);
+  } catch (err) { toast(err.message, 6000); }
+  btns.forEach(x => x.disabled = false);
+}
 function bindCard(el) {
   const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el);
   $$('[data-act]', el).forEach(b => b.onclick = () => setDecision(id, b.dataset.act));
-  $$('[data-trim]', el).forEach(b => b.onclick = () => {
-    const d = dec(id), k = b.dataset.trim; d[k] = Math.max(0, +((d[k] || 0) + +b.dataset.d).toFixed(2));
-    saveDecisions(); updateCard(el);
-    if (v) { v.currentTime = k === 'trimStart' ? d.trimStart : Math.max(0, c.duration - (d.trimEnd || 0) - 2); v.play(); }
-  });
-  $$('[data-ext]', el).forEach(b => b.onclick = () => { const d = dec(id), k = b.dataset.ext; d[k] = (d[k] || 0) + +b.dataset.d; saveDecisions(); updateCard(el); toast('Extensión anotada. Usá "Ver ajustado" para verla; la exportación ya la incluye.'); });
-  $('[data-reset]', el).onclick = () => { const d = dec(id); delete d.trimStart; delete d.trimEnd; delete d.extendStart; delete d.extendEnd; saveDecisions(); updateCard(el); if (v && c.file) { v.src = `/media/${encodeURIComponent(state.run.runId)}/${c.file}`; v._adjusted = false; } };
-  $('[data-preview]', el).onclick = async (e) => {
-    e.target.disabled = true; e.target.textContent = 'Cortando…';
-    try { const r = await api('/api/render-adjusted', { runId: state.run.runId, clipId: id, decision: dec(id) }); if (v) { v.src = r.file; v._adjusted = true; v.play(); } }
-    catch (err) { toast(err.message); }
-    e.target.disabled = false; e.target.textContent = 'Ver ajustado';
+  $$('[data-mark]', el).forEach(b => b.onclick = () => markPoint(el, b.dataset.mark));
+  const pb = $('[data-play]', el); if (pb) pb.onclick = () => playPlay(el);
+  $$('[data-more]', el).forEach(b => b.onclick = () => extendPreview(el, +b.dataset.more));
+  const rs = $('[data-reset]', el);
+  if (rs) rs.onclick = () => {
+    const d = dec(id);
+    ['inTime', 'outTime', 'trimStart', 'trimEnd', 'extendStart', 'extendEnd', 'preview'].forEach(k => delete d[k]);
+    saveDecisions();
+    const [p0, , src] = previewRange(c);
+    if (v && src) { v.src = src; v.addEventListener('loadedmetadata', () => { v.currentTime = Math.max(0, c.start - p0); }, { once: true }); }
+    updateCard(el);
   };
   if (v) {
-    v.addEventListener('play', () => { const d = dec(id); if (!v._adjusted && d.trimStart && v.currentTime < d.trimStart) v.currentTime = d.trimStart; });
-    v.addEventListener('timeupdate', () => { const d = dec(id); if (!v._adjusted && d.trimEnd && v.currentTime > c.duration - d.trimEnd) v.pause(); });
+    v.muted = true;
+    v.addEventListener('loadedmetadata', () => { const [p0] = previewRange(c), [a] = inOut(c); if (v.currentTime < 0.01) v.currentTime = Math.max(0, a - p0); });
+    v.addEventListener('timeupdate', () => { if (v._stopAt != null && v.currentTime >= v._stopAt) { v.pause(); v._stopAt = null; } paintTimeline(el, c); });
+    v.addEventListener('seeking', () => paintTimeline(el, c));
+    const tl = $('[data-tl]', el);
+    tl.addEventListener('click', ev => {
+      const r = tl.getBoundingClientRect(), [p0, p1] = previewRange(c);
+      if (!v.duration) { v.preload = 'auto'; v.load(); }
+      v.currentTime = Math.max(0, (ev.clientX - r.left) / r.width * (p1 - p0));
+    });
   }
   el.addEventListener('mouseenter', () => focusCard(el, false));
   el.addEventListener('focus', () => focusCard(el, false));
@@ -422,6 +480,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'a' || e.key === 'A') { if (cur) setDecision(cur.dataset.id, 'approved'); }
   else if (e.key === 'd' || e.key === 'D') { if (cur) setDecision(cur.dataset.id, 'rejected'); }
   else if (e.key === ' ') { if (cur) { const v = $('video', cur); if (v) { e.preventDefault(); v.paused ? v.play() : v.pause(); } } }
+  else if (e.key === 'i' || e.key === 'I') { if (cur) markPoint(cur, 'in'); }
+  else if (e.key === 'o' || e.key === 'O') { if (cur) markPoint(cur, 'out'); }
+  else if (e.key === 'p' || e.key === 'P') { if (cur) playPlay(cur); }
   else if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); if (cards[i + 1] || cards[0]) focusCard(cards[i + 1] || cards[0]); }
   else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); if (i > 0) focusCard(cards[i - 1]); }
 });

@@ -13,6 +13,7 @@ from .render import cut, poster, safe_name
 from .scorebug import Profile, read_scorebug_video
 
 HALF_NAME = {"T": "alta", "B": "baja"}
+PREVIEW_HANDLE = 15.0  # segundos de mas en la vista previa, antes y despues
 
 
 def half_label(inning, half):
@@ -186,10 +187,15 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         for k, c in enumerate(clips):
             prog("clips", 0.78 + 0.22 * k / max(1, len(clips)), f"Cortando vista previa {k + 1}/{len(clips)}")
             out = clip_dir / f"{c['id']}_{c['half']}_{c['type']}.mp4"
-            if cut(video, out, c["start"], c["duration"], mode="preview"):
+            # la vista previa trae margen de mas a cada lado para poder marcar
+            # inicio y fin por fuera del corte sugerido
+            p0 = max(0.0, c["start"] - PREVIEW_HANDLE)
+            p1 = min(duration or c["end"] + PREVIEW_HANDLE, c["end"] + PREVIEW_HANDLE)
+            if cut(video, out, p0, p1 - p0, mode="preview"):
                 c["file"] = f"clips/{out.name}"
+                c["previewStart"], c["previewEnd"] = round(p0, 2), round(p1, 2)
                 jpg = clip_dir / f"{out.stem}.jpg"
-                poster(out, jpg, min(c["duration"] - 0.5, max(0.5, c["pitchTime"] - c["start"] + 1.5)))
+                poster(out, jpg, min(p1 - p0 - 0.5, max(0.5, c["pitchTime"] - p0 + 1.5)))
                 if jpg.exists():
                     c["poster"] = f"clips/{jpg.name}"
 

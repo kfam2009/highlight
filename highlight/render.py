@@ -55,6 +55,12 @@ def poster(video, out_path, at_time):
 def adjusted_window(clip, decision):
     """Inicio y duracion en el video original aplicando los ajustes."""
     d = decision or {}
+    if d.get("inTime") is not None or d.get("outTime") is not None:
+        # inicio y fin marcados a mano en el panel (segundos del video original)
+        start = float(d["inTime"]) if d.get("inTime") is not None else float(clip["start"])
+        end = float(d["outTime"]) if d.get("outTime") is not None else float(clip["end"])
+        start = max(0.0, start)
+        return start, max(1.0, end - start)
     trim_start = max(0.0, float(d.get("trimStart") or 0))
     trim_end = max(0.0, float(d.get("trimEnd") or 0))
     ext_start = max(0.0, float(d.get("extendStart") or 0))

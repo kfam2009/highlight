@@ -360,16 +360,22 @@ def export_sequence(run_id, folder=""):
     return {"file": str(dest), "folder": str(out_dir), "count": len(items), "seconds": round(total, 1)}
 
 
-def render_adjusted(run_id, clip_id, decision):
+def render_adjusted(run_id, clip_id, decision, rng=None):
     m = load_run(run_id)
     c = next(c for c in m["clips"] if c["id"] == clip_id)
-    start, length = adjusted_window(c, decision)
+    if rng:
+        # vista previa de un tramo pedido (para alargar la jugada en el mismo cuadro)
+        start = max(0.0, float(rng[0]))
+        length = max(1.0, float(rng[1]) - start)
+    else:
+        start, length = adjusted_window(c, decision)
     out_dir = run_path(run_id) / "ajustados"
     out_dir.mkdir(exist_ok=True)
     dest = out_dir / f"{clip_id}_{int(time.time())}.mp4"
     if not cut(m["video"], dest, start, length, mode="preview"):
         raise RuntimeError("No se pudo cortar el clip ajustado (¿esta el video original?)")
-    return {"file": f"/media/{run_id}/ajustados/{dest.name}", "start": start, "length": length}
+    return {"file": f"/media/{run_id}/ajustados/{dest.name}", "start": round(start, 2), "end": round(start + length, 2),
+            "length": length}
 
 
 def browse_folder(title="Elegir carpeta"):
@@ -468,7 +474,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/export-xml":
                 return self.send_json(export_sequence(body["runId"], body.get("folder", "")))
             if u.path == "/api/render-adjusted":
-                return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {}))
+                return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
+                                                      body.get("range")))
             if u.path == "/api/delete-run":
                 return self.send_json(delete_run(body["runId"]))
         except Exception as exc:
