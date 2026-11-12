@@ -57,6 +57,19 @@ video original ──(1 pasada de ffmpeg)──► scorebug 5 fps · imagen 64x3
 - Si aparece un número que el perfil no conoce (por ejemplo una carrera 7),
   igual se detecta el **cambio**; solo se muestra el valor como `?`.
 
+## Modo automático
+
+Arriba a la izquierda, **Modo automático → Analizar solo cada partido nuevo de
+la carpeta**. Con eso activo, cada video que aparece en la carpeta de
+grabaciones se analiza solo cuando deja de crecer unos 2 minutos (terminó la
+grabación). Al terminar puede pre-aprobar los sugeridos (y los ponches que
+cierran entradas) y dejar armada la línea para Premiere. Vos solo abrís el
+análisis, revisás y ajustás.
+
+Arriba de cada análisis hay un control de entradas: dice si están todas las
+medias entradas o cuáles conviene revisar (scorebug que no se vio, entrada sin
+jugadas detectadas).
+
 ## Línea para Premiere
 
 **Línea para Premiere** genera `<partido>_highlights.xml` en la carpeta de

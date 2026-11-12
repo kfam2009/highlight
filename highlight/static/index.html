@@ -101,6 +101,22 @@
 </header>
 <main>
   <aside class="side">
+    <div class="box" id="autoBox">
+      <h3>Modo automático <span class="tag" id="autoTag">apagado</span></h3>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin:0">
+        <input type="checkbox" id="autoOn" style="width:auto"> Analizar solo cada partido nuevo de la carpeta
+      </label>
+      <div class="muted" style="margin-top:4px">Cuando un video deja de crecer (terminó la grabación) se analiza solo.</div>
+      <label for="autoApprove">Al terminar, pre-aprobar</label>
+      <select id="autoApprove">
+        <option value="sugeridos_k">Sugeridos + ponches de cierre</option>
+        <option value="sugeridos">Solo sugeridos</option>
+        <option value="">Nada (reviso yo)</option>
+      </select>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
+        <input type="checkbox" id="autoXml" style="width:auto"> Dejar lista la línea para Premiere
+      </label>
+    </div>
     <div class="box">
       <h3>Juegos grabados <button class="small" id="refreshVideos">Buscar</button></h3>
       <div class="list" id="videos"><div class="muted">Buscando…</div></div>
@@ -156,8 +172,21 @@ async function loadConfig() {
   state.config = await api('/api/config');
   $('#folders').value = (state.config.video_folders || []).join('\n');
   $('#exportDir').value = state.config.export_dir || '';
+  $('#autoOn').checked = !!state.config.auto_analyze;
+  $('#autoApprove').value = state.config.auto_approve ?? 'sugeridos_k';
+  $('#autoXml').checked = state.config.auto_xml !== false;
+  paintAuto();
   const p = await api('/api/profiles');
   $('#profile').innerHTML = `<option value="auto" ${state.config.default_profile === 'auto' ? 'selected' : ''}>Automático (busca el scorebug)</option>` + p.profiles.map(x => `<option value="${esc(x.name)}" ${x.name === state.config.default_profile ? 'selected' : ''}>${esc(x.name)} — ${esc(x.sport)}</option>`).join('');
+}
+function paintAuto() {
+  const on = !!(state.config && state.config.auto_analyze);
+  const t = $('#autoTag'); t.textContent = on ? 'activo' : 'apagado'; t.className = 'tag ' + (on ? 'ok' : '');
+}
+async function saveAuto() {
+  state.config = await api('/api/config', { auto_analyze: $('#autoOn').checked, auto_approve: $('#autoApprove').value, auto_xml: $('#autoXml').checked });
+  paintAuto();
+  toast(state.config.auto_analyze ? 'Modo automático activo: los partidos nuevos se analizan solos' : 'Modo automático apagado');
 }
 async function saveConfig() {
   const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -203,7 +232,7 @@ async function pollJobs() {
   $('#jobsBox').style.display = active.length ? '' : 'none';
   $('#jobs').innerHTML = active.map(j => `
     <div class="item" style="grid-template-columns:1fr auto">
-      <div><div class="name">${esc(j.name)}</div>
+      <div><div class="name">${j.auto ? '<span class="tag ok">auto</span> ' : ''}${esc(j.name)}</div>
         <div class="muted">${esc(j.error || j.message || j.status)}</div>
         ${j.status === 'analizando' ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>` : ''}</div>
       <div>${j.status === 'listo' ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
@@ -255,6 +284,7 @@ function renderRun() {
       </div>
       <div class="stats" id="stats" style="margin-top:10px"></div>
     </div>
+    <div class="box" id="checkBox" style="display:none"></div>
     <div class="innings" id="innings"></div>
     ${r.halves.map(h => `
       <div class="half" id="half-${h.key}">
@@ -269,12 +299,26 @@ function renderRun() {
     toast(`Aprobadas: ${r.clips.filter(c => dec(c.id).decision === 'approved').length} jugadas`);
   };
   $('#xmlBtn').onclick = exportXml;
+  renderCheck();
   $('#reanalyze').onclick = async () => {
     if (!confirm('Se arma un análisis nuevo con la lógica actual (no vuelve a leer el video completo). ¿Seguir?')) return;
     await api('/api/reanalyze', { runId: r.runId }); pollJobs(); toast('Re-análisis en la cola');
   };
   $$('.card').forEach(bindCard);
   renderHeaderStats();
+}
+function renderCheck() {
+  const r = state.run, hs = r.halves.filter(h => h.key !== 'FIN');
+  if (!hs.length || !hs[0].status) { $('#checkBox').style.display = 'none'; return; }
+  const last = hs[hs.length - 1];
+  const warn = hs.filter(h => h.status !== 'ok' && !(h === last && h.status === 'sin_cierre'));
+  const TXT = { sin_scorebug: 'no se vio el scorebug en toda la media entrada', sin_jugadas: 'no se detectaron jugadas', sin_cierre: 'no se vio el 3er out' };
+  $('#checkBox').style.display = '';
+  $('#checkBox').innerHTML = warn.length
+    ? `<b style="color:var(--amber)">Revisar ${warn.length} media${warn.length > 1 ? 's' : ''} entrada${warn.length > 1 ? 's' : ''}:</b> ` +
+      warn.map(h => `<span class="chip partial" data-go="${h.key}">${esc(h.label)}: ${TXT[h.status] || h.status}</span>`).join(' ')
+    : `<b style="color:var(--green)">✓ Todas las entradas: ${hs.length} medias entradas, de la ${esc(hs[0].label)} a la ${esc(last.label)}</b>`;
+  $$('[data-go]', $('#checkBox')).forEach(c => c.onclick = () => document.getElementById('half-' + c.dataset.go).scrollIntoView({ behavior: 'smooth' }));
 }
 function renderHeaderStats() {
   const r = state.run; if (!r) return;
@@ -411,6 +455,7 @@ async function exportApproved() {
 $('#refreshVideos').onclick = loadVideos;
 $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
+['#autoOn', '#autoApprove', '#autoXml'].forEach(id => $(id).onchange = saveAuto);
 $('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };
 $('#browseExport').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20exportacion'); if (r.folder) $('#exportDir').value = r.folder; };
 (async () => { await loadConfig(); loadVideos(); loadRuns(); pollJobs(); })().catch(e => toast(e.message));

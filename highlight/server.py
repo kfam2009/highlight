@@ -32,6 +32,10 @@ DEFAULT_CONFIG = {
     "data_dir": str(REPO / "datos"),
     "export_dir": "",
     "default_profile": "auto",
+    # modo automatico: cada partido nuevo de la carpeta se analiza solo
+    "auto_analyze": False,
+    "auto_approve": "sugeridos_k",   # "", "sugeridos" o "sugeridos_k" (+ ponches de cierre)
+    "auto_xml": True,                # dejar lista la linea para Premiere
 }
 
 
@@ -73,7 +77,7 @@ def scan_videos():
                 if rp in seen or data_dir in rp.parents:
                     continue
                 st = path.stat()
-                if st.st_size < 50 * 1024 * 1024:  # clips chicos no son partidos
+                if st.st_size < cfg.get("min_size_mb", 50) * 1024 * 1024:  # clips chicos no son partidos
                     continue
                 seen.add(rp)
                 recording = (time.time() - st.st_mtime) < 20
@@ -154,7 +158,7 @@ JOB_Q = queue.Queue()
 JOB_LOCK = threading.Lock()
 
 
-def enqueue(path, profile, reuse_run=None):
+def enqueue(path, profile, reuse_run=None, auto=False):
     path = str(Path(path).resolve())
     with JOB_LOCK:
         for j in JOBS:
@@ -162,10 +166,74 @@ def enqueue(path, profile, reuse_run=None):
                 return j
         job = {"id": f"j{int(time.time() * 1000)}", "path": path, "name": Path(path).name, "profile": profile,
                "status": "en cola", "progress": 0.0, "message": "", "runId": None, "error": None,
-               "queued": time.time(), "reuse": reuse_run}
+               "queued": time.time(), "reuse": reuse_run, "auto": auto}
         JOBS.append(job)
     JOB_Q.put(job)
     return job
+
+
+def is_closing_k(c):
+    if c.get("type") != "tercer_out":
+        return False
+    if "strikeout" in c:
+        return bool(c["strikeout"])
+    return bool(re.search(r"conteo \d-2", c.get("detail", "")))
+
+
+def auto_finish(m):
+    """Despues de un analisis automatico: pre-aprobar y dejar la linea lista."""
+    cfg = load_config()
+    extra = ""
+    mode = cfg.get("auto_approve") or ""
+    if mode:
+        dec = load_decisions(m["runId"])
+        n = 0
+        for c in m["clips"]:
+            if dec.get(c["id"], {}).get("decision"):
+                continue
+            if c.get("suggested") or (mode == "sugeridos_k" and is_closing_k(c)):
+                dec[c["id"]] = {"decision": "approved"}
+                n += 1
+        save_decisions(m["runId"], dec)
+        extra += f" · {n} pre-aprobadas"
+    if cfg.get("auto_xml") and mode:
+        try:
+            r = export_sequence(m["runId"])
+            extra += f" · línea Premiere lista"
+        except Exception as exc:
+            extra += f" · no se pudo armar la línea ({exc})"
+    return extra
+
+
+# ---------------------------------------------------------------- carpeta vigilada
+
+_SEEN_SIZES = {}
+_AUTO_FAILED = set()
+
+
+def watcher(period=30, settle_s=120):
+    """Modo automatico: un video que no cambia de tamano por ~2 minutos se
+    considera terminado de grabar y se manda a analizar."""
+    while True:
+        try:
+            cfg = load_config()
+            if cfg.get("auto_analyze"):
+                busy = {j["path"] for j in JOBS if j["status"] in ("en cola", "analizando")}
+                for v in scan_videos():
+                    if v.get("runId") or v["path"] in busy or v["path"] in _AUTO_FAILED:
+                        continue
+                    if any(j["path"] == v["path"] and j["status"] == "error" for j in JOBS):
+                        _AUTO_FAILED.add(v["path"])
+                        continue
+                    size = Path(v["path"]).stat().st_size
+                    prev = _SEEN_SIZES.get(v["path"])
+                    _SEEN_SIZES[v["path"]] = (size, prev[1] if prev and prev[0] == size else time.time())
+                    stable_since = _SEEN_SIZES[v["path"]][1]
+                    if time.time() - v["modified"] >= settle_s and time.time() - stable_since >= settle_s:
+                        enqueue(v["path"], cfg.get("default_profile") or "auto", auto=True)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(period)
 
 
 def worker():
@@ -200,9 +268,11 @@ def worker():
                                 break
                     save_decisions(m["runId"], moved)
             job["runId"] = m["runId"]
+            job["message"] = f"{m['stats']['clips']} jugadas en {m['stats']['halves']} medias entradas"
+            if job.get("auto"):
+                job["message"] += auto_finish(m)
             job["status"] = "listo"
             job["progress"] = 1.0
-            job["message"] = f"{m['stats']['clips']} jugadas en {m['stats']['halves']} medias entradas"
         except Exception as exc:
             job["status"] = "error"
             job["error"] = str(exc)
@@ -377,7 +447,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/api/config":
                 cfg = load_config()
-                for k in ("video_folders", "data_dir", "export_dir", "default_profile"):
+                for k in ("video_folders", "data_dir", "export_dir", "default_profile",
+                          "auto_analyze", "auto_approve", "auto_xml"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
@@ -455,6 +526,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("HIGHLIGHT_PORT", "8790"))
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=watcher, daemon=True).start()
     host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"Panel de highlights: http://127.0.0.1:{port}")

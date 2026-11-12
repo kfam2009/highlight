@@ -34,10 +34,19 @@ def extract(video, out_dir, profile, duration=None, on_progress=None, crop=None)
         "-filter_complex", fc,
         "-map", "[sb]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", str(out_dir / "scorebug.mp4"),
         "-map", "[cx]", "-an", "-f", "rawvideo", "-pix_fmt", "bgr24", str(out_dir / "contexto.raw"),
-        "-map", "0:a:0?", "-vn", "-ac", "1", "-ar", str(AUDIO_RATE), "-c:a", "pcm_s16le", str(out_dir / "audio.wav"),
     ]
+    if has_audio(video):
+        cmd += ["-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(AUDIO_RATE), "-c:a", "pcm_s16le", str(out_dir / "audio.wav")]
     run_with_progress(cmd, duration, on_progress)
     return out_dir
+
+
+def has_audio(video):
+    import subprocess
+
+    proc = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(video)],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="ignore")
+    return "Audio:" in proc.stderr
 
 
 def load_context(out_dir):

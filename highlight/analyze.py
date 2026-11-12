@@ -86,8 +86,17 @@ def build_clips(result):
                 "after": a,
             })
             ids.append(cid)
+        types = [e["type"] for e in h["events"]]
+        if h.get("missing"):
+            status = "sin_scorebug"
+        elif types == ["revisar"]:
+            status = "sin_jugadas"
+        elif any(e.get("half_changed") for e in h["events"]):
+            status = "ok"
+        else:
+            status = "sin_cierre"  # no se vio el 3er out (pasa en la ultima entrada: lo cubre el Final)
         halves.append({"key": key, "label": half_label(h["inning"], h["half"]), "inning": h["inning"], "half": h["half"],
-                       "start": h["start"], "end": h["end"], "clips": ids})
+                       "start": h["start"], "end": h["end"], "clips": ids, "status": status})
     fin = result.get("final")
     if fin:
         n += 1
@@ -194,7 +203,7 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         "timings": {"extraer_s": round(t_extract, 1), "total_s": round(time.time() - t0, 1)},
         "scorebugLocation": _read_json(work / "ubicacion_scorebug.json"),
         "stats": {
-            "halves": len(halves),
+            "halves": sum(1 for h in halves if h["key"] != "FIN"),
             "clips": len(clips),
             "carreras": sum(1 for c in clips if c["type"] == "carrera"),
             "pitchesMph": len(result["mph"]),
