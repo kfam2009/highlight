@@ -67,7 +67,8 @@
       "invert": true,
       "binarize": "normalized",
       "match": "ink",
-      "ratio": 0.1
+      "ratio": 0.1,
+      "strict_left": 0.22
     },
     "count": {
       "set": "count",

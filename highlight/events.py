@@ -65,8 +65,34 @@ def stable(seq, minrun=5):
     return out
 
 
+def infer_innings(st):
+    """Entradas que el perfil no sabe leer (aparecen como "?n"): se deducen por
+    la secuencia de altas y bajas. Despues de una baja viene la alta de la
+    entrada siguiente; despues de una alta, la baja de la misma entrada."""
+    inn, half = st["inning"], st["half"]
+    last_num, last_half = None, None
+    for i in range(len(inn)):
+        v, h = inn[i], half[i]
+        if v is None:
+            continue
+        n = _num(v)
+        if n is not None:
+            last_num = n
+            if h:
+                last_half = h
+            continue
+        if h and last_half and h != last_half and last_num is not None:
+            if last_half == "B" and h == "T":
+                last_num += 1
+        if h:
+            last_half = h
+        inn[i] = str(last_num) if last_num is not None else None
+    return st
+
+
 def smooth_state(raw):
     st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    infer_innings(st)
     cut = game_end_index(st)
     if cut is not None:
         for k in ALL_FIELDS:
@@ -502,6 +528,34 @@ def absence_replays(raw, st, fps, min_s=3.0, max_s=45.0):
     return out
 
 
+def fill_missing_halves(halves):
+    """Si entre dos medias entradas leidas falta alguna (el scorebug no se vio
+    en todo ese tramo), se agrega igual para revisarla a mano."""
+    out = []
+    for h in halves:
+        if out:
+            p = out[-1]
+            pi, ci = _num(p["inning"]), _num(h["inning"])
+            if pi is not None and ci is not None:
+                seq = []
+                inn, half = pi, p["half"]
+                for _ in range(6):
+                    inn, half = (inn, "B") if half == "T" else (inn + 1, "T")
+                    if (inn, half) == (ci, h["half"]):
+                        break
+                    seq.append((inn, half))
+                else:
+                    seq = []
+                if seq:
+                    t0, t1 = p["end"], h["start"]
+                    step = (t1 - t0) / len(seq) if t1 > t0 else 0
+                    for k, (inn, half) in enumerate(seq):
+                        out.append({"inning": str(inn), "half": half, "start": t0 + k * step,
+                                    "end": t0 + (k + 1) * step, "missing": True})
+        out.append(h)
+    return out
+
+
 def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_from_absence=False, out_from_count=False):
     fps = raw["fps"]
     st = smooth_state(raw)
@@ -530,7 +584,7 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
         events.append(ev)
         t_prev = g["t_last"]
 
-    halves = half_ranges(st, fps)
+    halves = fill_missing_halves(half_ranges(st, fps))
     story = [{**h, "events": []} for h in halves]
     for e in events:
         t = e["t"] - (1.0 if e["half_changed"] else 0.0)
@@ -547,10 +601,11 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
     for h in story:
         if not h["events"]:
             h["events"].append({
-                "type": "revisar", "label": "Media entrada sin jugadas detectadas", "priority": PRIORITY["revisar"],
+                "type": "revisar",
+                "label": "Media entrada sin scorebug: revisar a mano" if h.get("missing") else "Media entrada sin jugadas detectadas", "priority": PRIORITY["revisar"],
                 "runs": 0, "outs_gained": 0, "count_before": None, "half_changed": False, "batting": None,
                 "inning": h["inning"], "half": h["half"], "t": h["start"], "before": {}, "after": {},
-                "pitchTime": h["start"], "start": h["start"], "end": min(h["end"], h["start"] + 80.0),
+                "pitchTime": h["start"], "start": h["start"], "end": min(h["end"], h["start"] + (300.0 if h.get("missing") else 80.0)),
                 "replay": None, "timing": "tramo", "scorebugTime": h["start"],
             })
     final = final_segment(events, raw["present"], fps, mph)

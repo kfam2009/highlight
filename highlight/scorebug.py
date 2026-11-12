@@ -83,7 +83,7 @@ class GlyphReader:
              estricta; distingue 4TH de 5TH en textos largos).
     """
 
-    def __init__(self, templates, thr_ratio=0.08, glyph_threshold=140, binarize="fixed", match="area"):
+    def __init__(self, templates, thr_ratio=0.08, glyph_threshold=140, binarize="fixed", match="area", strict_left=0.0):
         self.labels = [lbl for lbl, _ in templates]
         # todas las plantillas de un mismo set se llevan al tamano de la primera
         self.shape = templates[0][1].shape if templates else None
@@ -99,6 +99,13 @@ class GlyphReader:
         self.gt = glyph_threshold
         self.binarize = binarize
         self.match = match
+        # strict_left: fraccion del ancho (izquierda) donde esta el numero; esa
+        # parte se compara aparte y mas exigente (evita confundir 5TH con 6TH)
+        self.strict_left = strict_left
+        if strict_left and self.mat is not None:
+            self.lw = max(2, int(self.shape[1] * strict_left))
+            self.left = np.array([v.reshape(self.shape)[:, :self.lw].ravel() for v in self.mat], np.int16)
+            self.left_ink = self.left.sum(1)
 
     def _bin(self, patch):
         if self.binarize == "normalized":
@@ -123,6 +130,10 @@ class GlyphReader:
             dd = np.abs(self.mat - b).sum(1)
             thr = self._thr(self.ink, bink, b.size)
             ok = dd < thr
+            if ok.any() and self.strict_left:
+                bl = b.reshape(self.shape)[:, :self.lw].ravel()
+                dl = np.abs(self.left - bl).sum(1)
+                ok &= dl < np.maximum(4, 0.22 * np.minimum(self.left_ink, int(bl.sum())))
             if ok.any():
                 j = int(np.argmin(np.where(ok, dd, 1 << 30)))
                 return self.labels[j]
@@ -146,7 +157,8 @@ def _glyph_specs(cfg):
             specs[name] = {"set": v, "invert": False, "ratio": 0.08, "binarize": "fixed", "match": "area"}
         else:
             specs[name] = {"set": v["set"], "invert": bool(v.get("invert")), "ratio": v.get("ratio", 0.08),
-                           "binarize": v.get("binarize", "fixed"), "match": v.get("match", "area")}
+                           "binarize": v.get("binarize", "fixed"), "match": v.get("match", "area"),
+                           "strict_left": v.get("strict_left", 0.0)}
     return specs
 
 
@@ -168,11 +180,24 @@ def read_scorebug_video(path, profile, progress=None):
     gt = cfg.get("glyph_threshold", 140)
     specs = _glyph_specs(cfg)
     readers = {n: GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
-                              binarize=sp["binarize"], match=sp["match"]) for n, sp in specs.items()}
+                              binarize=sp["binarize"], match=sp["match"],
+                              strict_left=sp.get("strict_left", 0.0)) for n, sp in specs.items()}
     pthr = cfg.get("presence_threshold", 20)
     bases_rule = cfg.get("bases_rule", "bright")
     mph_cfg = cfg.get("mph", {"rule": "red_center"})
     combined = "inning_half" in specs
+    arrow = None
+    if combined and profile.templates.get("inning_half"):
+        # para entradas que el perfil no vio (8ª, extra inning...): la flecha de
+        # alta/baja ocupa la parte derecha del texto y si se reconoce siempre
+        rd = readers["inning_half"]
+        w = rd.shape[1]
+        a0 = int(w * 0.68)
+        mats = {"T": [], "B": []}
+        for lbl, v in zip(rd.labels, rd.mat):
+            mats[lbl[-1]].append(v.reshape(rd.shape)[:, a0:])
+        if mats["T"] and mats["B"]:
+            arrow = (a0, {k: np.mean(v, 0) for k, v in mats.items()})
 
     cap = cv2.VideoCapture(str(path))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -224,6 +249,20 @@ def read_scorebug_video(path, profile, progress=None):
                 ih = vals.pop("inning_half")
                 if ih and not ih.startswith("?") and ih[-1] in "TB":
                     vals["inning"], vals["half"] = ih[:-1], ih[-1]
+                elif ih and arrow is not None:
+                    rd = readers["inning_half"]
+                    x0, y0, x1, y1 = regions["inning_half"]
+                    pt = g[y0:y1, x0:x1]
+                    if specs["inning_half"]["invert"]:
+                        pt = 255 - pt
+                    if pt.shape != rd.shape:
+                        pt = cv2.resize(pt, (rd.shape[1], rd.shape[0]), interpolation=cv2.INTER_AREA)
+                    part = rd._bin(pt).reshape(rd.shape)[:, arrow[0]:]
+                    dT = np.abs(part - arrow[1]["T"]).mean()
+                    dB = np.abs(part - arrow[1]["B"]).mean()
+                    # entrada desconocida: se guarda su id ("?n") y la mitad por la flecha
+                    vals["inning"] = ih
+                    vals["half"] = ("T" if dT < dB else "B") if abs(dT - dB) > 0.04 else None
                 else:
                     vals["inning"], vals["half"] = None, None
             elif mph_cfg["rule"] == "red_center" and mph:

@@ -58,7 +58,11 @@
     "home": "score",
     "count": "count",
     "outs": "outs",
-    "inning": "inning"
+    "inning": {
+      "set": "inning",
+      "match": "ink",
+      "ratio": 0.2
+    }
   },
   "points": {
     "base1": [
