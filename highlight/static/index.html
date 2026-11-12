@@ -99,7 +99,7 @@
       <div><div class="eyebrow">Softball / béisbol</div><h1>Highlights</h1></div>
     </div>
     <div class="row">
-      <span class="kbd">Teclas sobre un clip: I inicio · O fin · P ver jugada · A aprobar · D descartar · espacio play · ↑↓ moverse</span>
+      <span class="kbd">Teclas sobre un clip: espacio play/stop · ← → 1 s · I inicio · O fin · P ver jugada · A aprobar · D descartar · ↑↓ cambiar de clip</span>
     </div>
   </div>
 </header>
@@ -479,13 +479,28 @@ document.addEventListener('keydown', e => {
   const cur = cards[i];
   if (e.key === 'a' || e.key === 'A') { if (cur) setDecision(cur.dataset.id, 'approved'); }
   else if (e.key === 'd' || e.key === 'D') { if (cur) setDecision(cur.dataset.id, 'rejected'); }
-  else if (e.key === ' ') { if (cur) { const v = $('video', cur); if (v) { e.preventDefault(); v.paused ? v.play() : v.pause(); } } }
+  else if (e.key === ' ') {
+    // espacio: play / stop del cuadro activo (como en Premiere)
+    if (cur) { const v = $('video', cur); if (v) { e.preventDefault(); e.stopPropagation(); v._stopAt = null; v.paused ? v.play() : v.pause(); } }
+  }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    // flechas: 1 segundo atras / adelante
+    if (cur) {
+      const v = $('video', cur);
+      if (v) {
+        e.preventDefault(); e.stopPropagation();
+        const step = e.key === 'ArrowLeft' ? -1 : 1;
+        if (!v.duration) { v.preload = 'auto'; v.load(); }
+        v.currentTime = Math.max(0, Math.min((v.duration || 1e9) - 0.05, v.currentTime + step));
+      }
+    }
+  }
   else if (e.key === 'i' || e.key === 'I') { if (cur) markPoint(cur, 'in'); }
   else if (e.key === 'o' || e.key === 'O') { if (cur) markPoint(cur, 'out'); }
   else if (e.key === 'p' || e.key === 'P') { if (cur) playPlay(cur); }
   else if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); if (cards[i + 1] || cards[0]) focusCard(cards[i + 1] || cards[0]); }
   else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); if (i > 0) focusCard(cards[i - 1]); }
-});
+}, true);
 function isClosingK(c) {
   if (c.type !== 'tercer_out') return false;
   if (c.strikeout !== undefined) return c.strikeout;
