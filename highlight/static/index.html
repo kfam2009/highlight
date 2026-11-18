@@ -257,10 +257,42 @@ function sbText(sc) {
   const half = sc.half === 'T' ? 'alta' : sc.half === 'B' ? 'baja' : '';
   return `${sc.inning ?? '?'}ª ${half} · ${sc.away ?? '?'}-${sc.home ?? '?'} · ${sc.outs ?? '?'} out${sc.count ? ' · ' + sc.count : ''}${sc.onAir ? '' : ' · (sin scorebug en pantalla)'}`;
 }
+// sonido del monitor: un <audio> por campo -> medidor -> volumen (0 = solo medidor)
+const monAudio = {};
+let monCtx = null;
+function monAudioFor(name) {
+  if (monAudio[name]) return monAudio[name];
+  if (!monCtx) { try { monCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  const el = new Audio(); el.preload = 'none';
+  el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now();
+  const src = monCtx.createMediaElementSource(el);
+  const an = monCtx.createAnalyser(); an.fftSize = 1024;
+  const gain = monCtx.createGain(); gain.gain.value = 0;
+  src.connect(an); an.connect(gain); gain.connect(monCtx.destination);
+  const a = monAudio[name] = { el, an, gain, on: false, buf: new Float32Array(1024) };
+  el.onerror = () => { setTimeout(() => { el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now(); el.play().catch(() => {}); }, 3000); };
+  el.play().catch(() => {});
+  return a;
+}
+function monMeters() {
+  Object.entries(monAudio).forEach(([name, a]) => {
+    a.an.getFloatTimeDomainData(a.buf);
+    let sum = 0; for (const v of a.buf) sum += v * v;
+    const db = 20 * Math.log10(Math.sqrt(sum / a.buf.length) + 1e-6);
+    const bar = document.querySelector(`[data-meter="${CSS.escape(name)}"]`);
+    if (bar) { const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100)); bar.style.width = pct + '%'; bar.style.background = db > -6 ? '#f87171' : db > -20 ? '#22c55e' : '#3b82f6'; }
+    // no acumular demora
+    const el = a.el; if (el.buffered.length) { const end = el.buffered.end(el.buffered.length - 1); if (end - el.currentTime > 3) el.currentTime = end - 0.5; }
+  });
+  if ($('#monGrid')) requestAnimationFrame(monMeters);
+  else { Object.values(monAudio).forEach(a => { a.el.pause(); a.el.removeAttribute('src'); a.el.load(); }); Object.keys(monAudio).forEach(k => delete monAudio[k]); }
+}
 function openMonitor() {
   state.run = null; loadRuns();
+  if (monCtx && monCtx.state === 'suspended') monCtx.resume();
   $('#content').innerHTML = `<div class="box"><h3>Monitor de señales <span class="muted" style="text-transform:none;letter-spacing:0">video en vivo de lo que se está grabando</span></h3><div id="monGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px"></div></div>`;
   paintMonitor();
+  setTimeout(() => requestAnimationFrame(monMeters), 500);
 }
 async function paintMonitor() {
   clearTimeout(monTimer);
@@ -275,6 +307,11 @@ async function paintMonitor() {
       card = document.createElement('div'); card.id = id; card.className = 'box'; card.style.padding = '10px';
       card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>${esc(x.name)}</b><span class="tag m-tag"></span></div>
         <div class="m-screen" style="aspect-ratio:16/9;background:#000;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+        <div class="m-audio" style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <button class="small m-listen">🔇 Escuchar</button>
+          <div style="flex:1;height:8px;background:#0b1220;border-radius:4px;overflow:hidden"><div data-meter="${esc(x.name)}" style="height:100%;width:0;transition:width .08s"></div></div>
+          <span class="muted m-noaudio" style="display:none">sin audio</span>
+        </div>
         <div class="m-score" style="margin-top:8px;font-size:15px"></div><div class="muted m-file"></div><div class="muted m-cut"></div>
         <div class="row" style="margin-top:6px;gap:6px"><button class="small m-open" style="display:none">Abrir jugadas</button></div>`;
       grid.appendChild(card);
@@ -290,6 +327,20 @@ async function paintMonitor() {
       $('img', screen).onerror = () => { screen.dataset.on = ''; };
     } else if (!x.hasPreview) {
       screen.dataset.on = ''; screen.innerHTML = `<span class="muted">${esc(x.message || 'Sin señal')}</span>`;
+    }
+    const lb = $('.m-listen', card);
+    $('.m-noaudio', card).style.display = x.hasAudio ? 'none' : '';
+    lb.style.display = x.hasAudio ? '' : 'none';
+    if (x.hasAudio && x.hasPreview) {
+      const a = monAudioFor(x.name);
+      if (a) {
+        lb.textContent = a.on ? '🔊 Escuchando' : '🔇 Escuchar';
+        lb.onclick = () => {
+          if (monCtx.state === 'suspended') monCtx.resume();
+          a.on = !a.on; a.gain.gain.value = a.on ? 1 : 0; a.el.play().catch(() => {});
+          lb.textContent = a.on ? '🔊 Escuchando' : '🔇 Escuchar';
+        };
+      }
     }
     $('.m-score', card).textContent = sbText(lv.scoreNow);
     $('.m-file', card).textContent = (x.file ? x.file + ' · ' + (x.sizeMb || 0) + ' MB' : '') + (lv.message ? ' · ' + lv.message : '');

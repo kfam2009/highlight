@@ -262,6 +262,7 @@ def rec_infos():
             ss = LIVE.get(str(Path(r.file).resolve())) if r.file else None
             info["live"] = ss.info() if ss else None
             info["hasPreview"] = bool(r.preview and r.frame is not None)
+            info["hasAudio"] = bool(r.preview and not r.no_audio)
         info = info if info is not None else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
                                    "file": None, "sizeMb": None, "since": None, "files": []}
         out.append(info)
@@ -540,6 +541,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"jobs": JOBS[-30:] + [ss.info() for ss in LIVE.values()]})
             if path == "/api/rec":
                 return self.send_json(rec_infos())
+            if path == "/api/rec-audio":
+                return self.stream_audio(RECORDERS.get(q.get("name", [""])[0]))
             if path == "/api/rec-live":
                 return self.stream_monitor(RECORDERS.get(q.get("name", [""])[0]))
             if path == "/api/browse-folder":
@@ -602,6 +605,27 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             return self.send_json({"error": str(exc)}, status=500)
         return self.send_error(404)
+
+    def stream_audio(self, rec):
+        """Sonido del monitor: MP3 sin fin, el navegador lo reproduce con <audio>."""
+        if not rec or rec.no_audio:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        q = rec.listen()
+        try:
+            while rec.thread is not None and rec.thread.is_alive():
+                try:
+                    data = q.get(timeout=5)
+                except Exception:
+                    continue
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
+        finally:
+            rec.unlisten(q)
 
     def stream_monitor(self, rec):
         """Video del monitor como MJPEG (multipart): el navegador lo muestra

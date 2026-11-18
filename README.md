@@ -102,8 +102,9 @@ activado) no hace falta: cuando el scorebug muestra un partido terminado
 (7ª entrada o nocaut con ganador) y se va de pantalla unos minutos, o vuelve
 en 1ª entrada 0-0, el panel corta el archivo y arranca el próximo partido.
 **Monitor** muestra el video de cada señal en vivo (640 px, 25 cuadros, sacado
-de lo que ya se está grabando: no gasta internet ni Cloudflare) y lo que dice
-el scorebug. Necesita un ffmpeg con SRT: si el panel
+de lo que ya se está grabando: no gasta internet ni Cloudflare), un medidor
+de audio por campo, el botón **Escuchar** para oír ese campo, y lo que dice el
+scorebug. Necesita un ffmpeg con SRT: si el panel
 avisa que falta, en PowerShell `winget install Gyan.FFmpeg` y reiniciar el
 panel.
 

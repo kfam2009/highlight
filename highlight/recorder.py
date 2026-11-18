@@ -7,6 +7,8 @@ archivo actual y empieza otro al instante, para separar un partido del
 siguiente cuando la senal es continua.
 """
 import os
+import queue
+import socket
 import re
 import shutil
 import subprocess
@@ -80,6 +82,12 @@ class Recorder:
         self.preview = bool(preview)   # video chico para el monitor del panel
         self.frame, self.frame_seq = None, 0
         self.frame_cv = threading.Condition()
+        # sonido del monitor: ffmpeg manda MP3 por UDP local (nunca frena la grabacion)
+        self.no_audio = False
+        self.listeners = set()
+        self.listeners_lock = threading.Lock()
+        self.audio_sock = None
+        self.audio_level = 0.0
         self.on_new_file = on_new_file
         self.proc = None
         self.file = None
@@ -154,6 +162,42 @@ class Recorder:
         except Exception:
             pass
 
+    def _audio_port(self):
+        if self.audio_sock is None:
+            try:
+                sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sk.bind(("127.0.0.1", 0))
+                sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+                self.audio_sock = sk
+                threading.Thread(target=self._read_audio, daemon=True).start()
+            except OSError:
+                return None
+        return self.audio_sock.getsockname()[1]
+
+    def _read_audio(self):
+        while True:
+            try:
+                data = self.audio_sock.recv(65536)
+            except OSError:
+                time.sleep(1)
+                continue
+            with self.listeners_lock:
+                for q in list(self.listeners):
+                    try:
+                        q.put_nowait(data)
+                    except queue.Full:
+                        pass   # el que escucha esta lento: se saltea un pedazo
+
+    def listen(self):
+        q = queue.Queue(maxsize=400)
+        with self.listeners_lock:
+            self.listeners.add(q)
+        return q
+
+    def unlisten(self, q):
+        with self.listeners_lock:
+            self.listeners.discard(q)
+
     def wait_frame(self, last_seq, timeout=5.0):
         with self.frame_cv:
             if self.frame_seq == last_seq or self.frame is None:
@@ -182,6 +226,11 @@ class Recorder:
                 # monitor: video chico en JPEGs seguidos por la salida estandar
                 cmd += ["-map", "0:v:0", "-vf", f"fps={MONITOR_FPS},scale={MONITOR_W}:-2", "-q:v", "7",
                         "-c:v", "mjpeg", "-f", "mjpeg", "pipe:1"]
+                if not self.no_audio:
+                    port = self._audio_port()
+                    if port:
+                        cmd += ["-map", "0:a:0?", "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k",
+                                "-f", "mp3", f"udp://127.0.0.1:{port}?pkt_size=1316"]
             if self.status != "sin señal":
                 self.status, self.message = "conectando", "Esperando la señal"
             t0 = time.time()
@@ -223,6 +272,10 @@ class Recorder:
                 break
             if self._cut.is_set():
                 continue   # nuevo archivo enseguida
+            if not announced and not self.no_audio and any("does not contain any stream" in e or "matches no streams" in e
+                                                           for e in err):
+                self.no_audio = True   # la senal viene sin audio: grabar sin el sonido del monitor
+                continue
             self.status = "sin señal"
             self.message = (err[-1] if err else "Se cortó la señal") + " · reintentando"
             if time.time() - t0 < RETRY_S:
