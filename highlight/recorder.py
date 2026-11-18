@@ -101,6 +101,7 @@ class Recorder:
         self._stop = threading.Event()
         self._cut = threading.Event()
         self.thread = None
+        self.record = False   # False = solo monitor (se ve la senal, no se graba)
 
     # ------------------------------------------------------------------
     def start(self):
@@ -113,6 +114,14 @@ class Recorder:
 
     def stop(self):
         self._stop.set()
+        self._kill()
+
+    def set_record(self, on):
+        """Pasar de solo monitor a grabar (o al reves): se reconecta en el acto."""
+        if bool(on) == self.record:
+            return
+        self.record = bool(on)
+        self._cut.set()
         self._kill()
 
     def cut(self, reason=""):
@@ -220,10 +229,12 @@ class Recorder:
     def _run(self):
         while not self._stop.is_set():
             self._cut.clear()
-            path = self._new_path()
+            recording = self.record
+            path = self._new_path() if recording else None
             cmd = [srt_ffmpeg() or ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
-                   "-i", _with_timeout(self.url),
-                   "-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-f", "matroska", str(path)]
+                   "-i", _with_timeout(self.url)]
+            if recording:
+                cmd += ["-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-f", "matroska", str(path)]
             if self.preview:
                 # monitor: video chico en JPEGs seguidos por la salida estandar
                 cmd += ["-map", "0:v:0", "-vf", f"fps={MONITOR_FPS},scale={MONITOR_W}:-2", "-q:v", "7",
@@ -253,6 +264,11 @@ class Recorder:
                 return
             announced = False
             while self.proc.poll() is None:
+                if not recording:
+                    if self.frame is not None and self.status != "monitor":
+                        self.status, self.message = "monitor", "Viendo la señal (sin grabar)"
+                    time.sleep(1)
+                    continue
                 if not announced and path.exists() and path.stat().st_size > 1_000_000:
                     announced = True
                     self.file, self.started_file_at = str(path), time.time()
@@ -267,7 +283,7 @@ class Recorder:
             errf.seek(0)
             err = errf.read().decode("utf-8", "replace").strip().splitlines()
             errf.close()
-            if not announced and path.exists() and path.stat().st_size < 1_000_000:
+            if recording and not announced and path.exists() and path.stat().st_size < 1_000_000:
                 try:
                     path.unlink()   # intento fallido, sin video
                 except OSError:
@@ -280,7 +296,7 @@ class Recorder:
                 break
             if self._cut.is_set():
                 continue   # nuevo archivo enseguida
-            if not announced and not self.no_audio and any("does not contain any stream" in e or "matches no streams" in e
+            if not announced and self.status != "monitor" and not self.no_audio and any("does not contain any stream" in e or "matches no streams" in e
                                                            for e in err):
                 self.no_audio = True   # la senal viene sin audio: grabar sin el sonido del monitor
                 continue
@@ -305,7 +321,7 @@ class Recorder:
         return {"name": self.name, "url": self.url, "status": self.status, "message": self.message,
                 "file": Path(self.file).name if self.file else None, "sizeMb": size,
                 "since": self.started_file_at if self.file else None,
-                "files": [Path(f).name for f in self.files], "lastCut": self.last_cut}
+                "files": [Path(f).name for f in self.files], "lastCut": self.last_cut, "record": self.record}
 
 
 def kill_orphans(pid_dir):

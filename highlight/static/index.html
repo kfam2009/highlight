@@ -318,7 +318,7 @@ async function paintMonitor() {
     }
     const lv = x.live || {};
     const rec = x.status === 'grabando';
-    const tag = $('.m-tag', card); tag.className = 'tag m-tag ' + (rec ? 'err' : 'run'); tag.textContent = (rec ? '● ' : '') + x.status;
+    const tag = $('.m-tag', card); tag.className = 'tag m-tag ' + (rec ? 'err' : x.status === 'monitor' ? 'ok' : 'run'); tag.textContent = (rec ? '● ' : '') + (x.status === 'monitor' ? 'en vivo · sin grabar' : x.status);
     const screen = $('.m-screen', card);
     // el video (MJPEG) se conecta una sola vez; solo se reconecta si se cortó
     if (x.hasPreview && screen.dataset.on !== '1') {
@@ -342,7 +342,7 @@ async function paintMonitor() {
         };
       }
     }
-    $('.m-score', card).textContent = x.status === 'detenido' ? 'Tocá Grabar para conectar la señal' : sbText(lv.scoreNow);
+    $('.m-score', card).textContent = x.status === 'monitor' ? 'Viendo la señal · tocá Grabar cuando empiece el partido' : x.status === 'detenido' ? 'Detenido' : sbText(lv.scoreNow);
     $('.m-file', card).textContent = (x.file ? x.file + ' · ' + (x.sizeMb || 0) + ' MB' : '') + (lv.message ? ' · ' + lv.message : '');
     $('.m-cut', card).textContent = x.lastCut ? 'Último corte: ' + x.lastCut : '';
     const ob = $('.m-open', card); ob.style.display = lv.runId ? '' : 'none';
@@ -361,12 +361,12 @@ async function pollRec() {
     $('#goCfg').onclick = () => { const d = $('details'); d.open = true; d.scrollIntoView({ behavior: 'smooth' }); $('#srtUrl1').focus(); };
   }
   $('#autoCut').checked = r.autoCut !== false;
-  const color = { grabando: 'err', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
+  const color = { grabando: 'err', monitor: 'ok', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
   if (r.sources.length) $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
-    const on = x.status !== 'detenido' && x.status !== 'error';
+    const on = !!x.record && x.status !== 'detenido' && x.status !== 'error';
     const mins = x.since ? Math.floor((Date.now() / 1000 - x.since) / 60) : 0;
     return `<div class="item" style="grid-template-columns:1fr auto">
-      <div><div class="name"><span class="tag ${color[x.status] || ''}">${x.status === 'grabando' ? '● ' : ''}${esc(x.status)}</span> ${esc(x.name)}</div>
+      <div><div class="name"><span class="tag ${color[x.status] || ''}">${x.status === 'grabando' ? '● ' : ''}${esc(x.status === 'monitor' ? 'en vivo · sin grabar' : x.status)}</span> ${esc(x.name)}</div>
         <div class="muted">${x.file ? esc(x.file) + ' · ' + (x.sizeMb || 0) + ' MB · ' + mins + ' min' : esc(x.message || '')}</div>
         ${x.lastCut ? `<div class="muted">Último corte: ${esc(x.lastCut)} · ${x.files.length} archivos</div>` : ''}</div>
       <div class="row" style="gap:4px">${on
@@ -375,7 +375,7 @@ async function pollRec() {
     </div>`;
   }).join('');
   $$('[data-rec]', $('#recList')).forEach(b => b.onclick = async () => {
-    if (b.dataset.act === 'stop' && !confirm('¿Detener la grabación de ' + b.dataset.rec + '?')) return;
+    if (b.dataset.act === 'stop' && !confirm('¿Detener la grabación de ' + b.dataset.rec + '? La señal se sigue viendo en el monitor.')) return;
     if (b.dataset.act === 'cut' && !confirm('¿Cortar el partido de ' + b.dataset.rec + ' y empezar un archivo nuevo?')) return;
     await api('/api/rec', { name: b.dataset.rec, action: b.dataset.act }); setTimeout(pollRec, 800); setTimeout(pollJobs, 1500);
   });

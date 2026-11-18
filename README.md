@@ -90,7 +90,9 @@ relato**.
 
 En **Configuración → Señales SRT** pegá el link SRT de Castr de cada campo
 (una línea para Campo 1 y otra para Campo 2; el nombre se puede cambiar) y
-**Guardar**.
+**Guardar**. Apenas se guarda, cada campo se conecta y se ve en el **Monitor**
+("en vivo · sin grabar"), así se puede chequear la señal antes del partido sin
+llenar el disco.
 
 Aparece la caja **Grabar señales** con un botón **Grabar** por campo. El panel
 copia la señal tal como llega (sin recodificar, casi no usa la PC) a un MKV en

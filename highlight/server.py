@@ -276,8 +276,11 @@ def rec_action(name, action):
     if not src:
         return {"error": f"no hay una señal llamada {name}"}
     r = RECORDERS.get(name)
-    if action == "start":
-        if not r or r.url != src["url"] or not (r.thread and r.thread.is_alive()):
+    if action in ("start", "monitor"):
+        if r and r.url != src["url"]:
+            r.stop()
+            r = None
+        if not r or not (r.thread and r.thread.is_alive()):
             def game_over(session, over):
                 # fin del partido detectado en el scorebug: cerrar el archivo y
                 # seguir con el proximo partido en uno nuevo
@@ -301,9 +304,17 @@ def rec_action(name, action):
             r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True,
                          pid_dir=Path(load_config()["data_dir"]) / "grabando")
             RECORDERS[name] = r
-        r.start()
-        _remember_recording(name, True)
+            r.record = action == "start"
+            r.start()
+        elif action == "start":
+            r.set_record(True)
+        if action == "start":
+            _remember_recording(name, True)
     elif r and action == "stop":
+        # deja de grabar; el monitor sigue mostrando la senal
+        threading.Thread(target=r.set_record, args=(False,), daemon=True).start()
+        _remember_recording(name, False)
+    elif r and action == "off":
         threading.Thread(target=r.stop, daemon=True).start()
         _remember_recording(name, False)
     elif r and action == "cut":
@@ -327,10 +338,26 @@ def _remember_recording(name, on):
     p.write_text(json.dumps(sorted(names), ensure_ascii=False), encoding="utf-8")
 
 
+def ensure_monitors():
+    """Cada senal cargada se conecta sola para el monitor (sin grabar).
+    Las que ya no estan en la configuracion se apagan."""
+    names = {s["name"] for s in load_config().get("srt_sources", [])}
+    for name, r in list(RECORDERS.items()):
+        if name not in names:
+            r.stop()
+            RECORDERS.pop(name, None)
+    for name in names:
+        try:
+            rec_action(name, "monitor")
+        except Exception:
+            traceback.print_exc()
+
+
 def resume_recordings():
     from .recorder import kill_orphans
     kill_orphans(Path(load_config()["data_dir"]) / "grabando")
     time.sleep(2)
+    ensure_monitors()
     p = _rec_state_path()
     try:
         names = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
@@ -611,6 +638,8 @@ class Handler(BaseHTTPRequestHandler):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
+                if "srt_sources" in body:
+                    threading.Thread(target=ensure_monitors, daemon=True).start()
                 return self.send_json(cfg)
             if u.path == "/api/queue":
                 profile = body.get("profile") or load_config()["default_profile"]
