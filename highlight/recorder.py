@@ -19,6 +19,8 @@ from pathlib import Path
 from .ffmpeg import ffmpeg_exe
 
 RETRY_S = 5
+MONITOR_FPS = 25
+MONITOR_W = 640
 SRT_TIMEOUT_US = 15_000_000   # sin datos 15 s = senal caida
 
 
@@ -75,7 +77,9 @@ def _with_timeout(url):
 class Recorder:
     def __init__(self, name, url, folder, on_new_file=None, preview=None):
         self.name, self.url, self.folder = name, url, Path(folder)
-        self.preview = Path(preview) if preview else None   # foto de la senal cada 2 s (monitor)
+        self.preview = bool(preview)   # video chico para el monitor del panel
+        self.frame, self.frame_seq = None, 0
+        self.frame_cv = threading.Condition()
         self.on_new_file = on_new_file
         self.proc = None
         self.file = None
@@ -120,6 +124,42 @@ class Recorder:
             except subprocess.TimeoutExpired:
                 p.kill()
 
+    # ------------------------------------------------------------------ monitor
+    def _read_frames(self, pipe):
+        """Leer siempre la salida (si no, ffmpeg se frena y la grabacion
+        tambien) y guardar el ultimo cuadro."""
+        buf = b""
+        try:
+            while True:
+                chunk = pipe.read1(65536) if hasattr(pipe, "read1") else pipe.read(65536)
+                if not chunk:
+                    break
+                buf += chunk
+                while True:
+                    a = buf.find(b"\xff\xd8")
+                    if a < 0:
+                        buf = b""
+                        break
+                    b = buf.find(b"\xff\xd9", a + 2)
+                    if b < 0:
+                        buf = buf[a:]
+                        if len(buf) > 4_000_000:
+                            buf = b""
+                        break
+                    with self.frame_cv:
+                        self.frame = buf[a:b + 2]
+                        self.frame_seq += 1
+                        self.frame_cv.notify_all()
+                    buf = buf[b + 2:]
+        except Exception:
+            pass
+
+    def wait_frame(self, last_seq, timeout=5.0):
+        with self.frame_cv:
+            if self.frame_seq == last_seq or self.frame is None:
+                self.frame_cv.wait(timeout)
+            return self.frame, self.frame_seq
+
     # ------------------------------------------------------------------
     def _new_path(self):
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -139,15 +179,18 @@ class Recorder:
                    "-i", _with_timeout(self.url),
                    "-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-f", "matroska", str(path)]
             if self.preview:
-                self.preview.parent.mkdir(parents=True, exist_ok=True)
-                cmd += ["-map", "0:v:0", "-vf", "fps=1/2,scale=640:-2", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
-                        "-f", "image2", str(self.preview)]
+                # monitor: video chico en JPEGs seguidos por la salida estandar
+                cmd += ["-map", "0:v:0", "-vf", f"fps={MONITOR_FPS},scale={MONITOR_W}:-2", "-q:v", "7",
+                        "-c:v", "mjpeg", "-f", "mjpeg", "pipe:1"]
             if self.status != "sin señal":
                 self.status, self.message = "conectando", "Esperando la señal"
             t0 = time.time()
             try:
                 errf = tempfile.TemporaryFile()
-                self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errf)
+                self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                                             stdout=subprocess.PIPE if self.preview else subprocess.DEVNULL, stderr=errf)
+                if self.preview:
+                    threading.Thread(target=self._read_frames, args=(self.proc.stdout,), daemon=True).start()
             except Exception as exc:
                 self.status, self.message = "error", str(exc)
                 return
@@ -173,6 +216,9 @@ class Recorder:
                 except OSError:
                     pass
             self.file = None
+            with self.frame_cv:
+                self.frame = None
+                self.frame_cv.notify_all()
             if self._stop.is_set():
                 break
             if self._cut.is_set():

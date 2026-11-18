@@ -261,7 +261,7 @@ def rec_infos():
         if info is not None:
             ss = LIVE.get(str(Path(r.file).resolve())) if r.file else None
             info["live"] = ss.info() if ss else None
-            info["hasPreview"] = bool(r.preview and r.preview.exists() and r.file)
+            info["hasPreview"] = bool(r.preview and r.frame is not None)
         info = info if info is not None else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
                                    "file": None, "sizeMb": None, "since": None, "files": []}
         out.append(info)
@@ -297,8 +297,7 @@ def rec_action(name, action):
                         hint = (ss.profile_name, ss.crop, ss.loc_info)
                         break
                 start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
-            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file,
-                         preview=Path(load_config()["data_dir"]) / "monitor" / f"{safe_name(name)}.jpg")
+            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True)
             RECORDERS[name] = r
         r.start()
     elif r and action == "stop":
@@ -541,11 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"jobs": JOBS[-30:] + [ss.info() for ss in LIVE.values()]})
             if path == "/api/rec":
                 return self.send_json(rec_infos())
-            if path == "/api/rec-preview":
-                r = RECORDERS.get(q.get("name", [""])[0])
-                if not r or not r.preview or not r.preview.exists():
-                    return self.send_error(404)
-                return self.serve_file(r.preview)
+            if path == "/api/rec-live":
+                return self.stream_monitor(RECORDERS.get(q.get("name", [""])[0]))
             if path == "/api/browse-folder":
                 return self.send_json(browse_folder(q.get("title", ["Elegir carpeta"])[0]))
             if path.startswith("/media/"):
@@ -606,6 +602,30 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             return self.send_json({"error": str(exc)}, status=500)
         return self.send_error(404)
+
+    def stream_monitor(self, rec):
+        """Video del monitor como MJPEG (multipart): el navegador lo muestra
+        fluido en un <img>, sin reproductor ni internet."""
+        if not rec:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=cuadro")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        seq = -1
+        try:
+            while True:
+                frame, new_seq = rec.wait_frame(seq)
+                if frame is None or new_seq == seq:
+                    if rec.thread is None or not rec.thread.is_alive():
+                        break
+                    continue
+                seq = new_seq
+                self.wfile.write(b"--cuadro\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                 + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
 
     def serve_file(self, path):
         path = Path(path)
