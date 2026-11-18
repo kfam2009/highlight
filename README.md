@@ -88,12 +88,9 @@ relato**.
 
 ### Grabar las señales SRT
 
-En **Configuración → Señales SRT** poné una línea por campo:
-
-```
-Campo 1 | srt://…   (el link SRT que da Castr)
-Campo 2 | srt://…
-```
+En **Configuración → Señales SRT** pegá el link SRT de Castr de cada campo
+(una línea para Campo 1 y otra para Campo 2; el nombre se puede cambiar) y
+**Guardar**.
 
 Aparece la caja **Grabar señales** con un botón **Grabar** por campo. El panel
 copia la señal tal como llega (sin recodificar, casi no usa la PC) a un MKV en

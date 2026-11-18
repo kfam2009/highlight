@@ -153,8 +153,9 @@
         <label for="folders">Carpeta de los partidos: ahí graba el panel y ahí podés poner otros videos (una por línea)</label>
         <textarea id="folders"></textarea>
         <div class="row" style="margin-top:6px"><button class="small" id="addFolder">Agregar carpeta…</button></div>
-        <label for="srtList">Señales SRT para grabar (una por línea: <code>Nombre | srt://…</code>)</label>
-        <textarea id="srtList" placeholder="Campo 1 | srt://ingest.castr.io:9999?streamid=…&#10;Campo 2 | srt://…"></textarea>
+        <label>Señales SRT (pegá el link de Castr de cada campo)</label>
+        <div class="row" style="gap:6px;margin-bottom:6px"><input id="srtName1" style="width:90px" value="Campo 1"><input id="srtUrl1" style="flex:1" placeholder="srt://…"></div>
+        <div class="row" style="gap:6px"><input id="srtName2" style="width:90px" value="Campo 2"><input id="srtUrl2" style="flex:1" placeholder="srt://…"></div>
         <label for="exportDir">Carpeta de exportación (vacío = datos/exportados)</label>
         <div class="row"><input id="exportDir" style="flex:1"><button class="small" id="browseExport">Examinar</button></div>
         <div class="row" style="margin-top:8px"><button class="blue" id="saveCfg" style="flex:1">Guardar</button></div>
@@ -193,7 +194,8 @@ async function loadConfig() {
   $('#autoApprove').value = state.config.auto_approve ?? 'sugeridos_k';
   $('#autoXml').checked = state.config.auto_xml !== false;
   $('#liveOn').checked = !!state.config.live_mode;
-  $('#srtList').value = (state.config.srt_sources || []).map(x => x.name + ' | ' + x.url).join('\n');
+  const srcs = state.config.srt_sources || [];
+  [1, 2].forEach(i => { const x = srcs[i - 1]; $('#srtName' + i).value = x ? x.name : 'Campo ' + i; $('#srtUrl' + i).value = x ? x.url : ''; });
   paintAuto();
   pollRec();
   const p = await api('/api/profiles');
@@ -210,9 +212,7 @@ async function saveAuto() {
 }
 async function saveConfig() {
   const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);
-  const srt = $('#srtList').value.split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => {
-    const k = l.indexOf('|'); return k > 0 ? { name: l.slice(0, k).trim(), url: l.slice(k + 1).trim() } : { name: 'Campo ' + (i + 1), url: l };
-  }).filter(x => x.url);
+  const srt = [1, 2].map(i => ({ name: $('#srtName' + i).value.trim() || 'Campo ' + i, url: $('#srtUrl' + i).value.trim() })).filter(x => x.url);
   state.config = await api('/api/config', { video_folders: folders, export_dir: $('#exportDir').value.trim(), default_profile: $('#profile').value, srt_sources: srt });
   pollRec();
   toast('Configuración guardada'); loadVideos();
@@ -357,8 +357,8 @@ async function pollRec() {
   const r = await api('/api/rec');
   $('#recBox').style.display = '';
   if (!r.sources.length) {
-    $('#recList').innerHTML = `<div class="muted">Todavía no hay señales. Abrí <b>Configuración</b> (abajo) y en <b>Señales SRT</b> poné una línea por campo:<br><code>Campo 1 | srt://…</code><br><code>Campo 2 | srt://…</code><br>Después <b>Guardar</b> y aparece el botón Grabar de cada campo.</div><div class="row" style="margin-top:6px"><button class="small" id="goCfg">Ir a Configuración</button></div>`;
-    $('#goCfg').onclick = () => { const d = $('details'); d.open = true; d.scrollIntoView({ behavior: 'smooth' }); $('#srtList').focus(); };
+    $('#recList').innerHTML = `<div class="muted">Todavía no hay señales. Abrí <b>Configuración</b> (abajo), pegá el link SRT de cada campo y tocá <b>Guardar</b>: aparece el botón Grabar de cada uno.</div><div class="row" style="margin-top:6px"><button class="small" id="goCfg">Ir a Configuración</button></div>`;
+    $('#goCfg').onclick = () => { const d = $('details'); d.open = true; d.scrollIntoView({ behavior: 'smooth' }); $('#srtUrl1').focus(); };
   }
   $('#autoCut').checked = r.autoCut !== false;
   const color = { grabando: 'err', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };

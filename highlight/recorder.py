@@ -77,8 +77,10 @@ def _with_timeout(url):
 
 
 class Recorder:
-    def __init__(self, name, url, folder, on_new_file=None, preview=None):
+    def __init__(self, name, url, folder, on_new_file=None, preview=None, pid_dir=None):
         self.name, self.url, self.folder = name, url, Path(folder)
+        # pid del ffmpeg: si el panel se cierra de golpe, al volver se cierra el que quedo suelto
+        self.pid_file = Path(pid_dir) / f"{_safe(name)}.pid" if pid_dir else None
         self.preview = bool(preview)   # video chico para el monitor del panel
         self.frame, self.frame_seq = None, 0
         self.frame_cv = threading.Condition()
@@ -238,6 +240,12 @@ class Recorder:
                 errf = tempfile.TemporaryFile()
                 self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                              stdout=subprocess.PIPE if self.preview else subprocess.DEVNULL, stderr=errf)
+                if self.pid_file:
+                    try:
+                        self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+                        self.pid_file.write_text(str(self.proc.pid))
+                    except OSError:
+                        pass
                 if self.preview:
                     threading.Thread(target=self._read_frames, args=(self.proc.stdout,), daemon=True).start()
             except Exception as exc:
@@ -280,6 +288,11 @@ class Recorder:
             self.message = (err[-1] if err else "Se cortó la señal") + " · reintentando"
             if time.time() - t0 < RETRY_S:
                 self._stop.wait(RETRY_S)
+        if self.pid_file:
+            try:
+                self.pid_file.unlink()
+            except OSError:
+                pass
         self.status, self.message = "detenido", ""
 
     def info(self):
@@ -293,3 +306,35 @@ class Recorder:
                 "file": Path(self.file).name if self.file else None, "sizeMb": size,
                 "since": self.started_file_at if self.file else None,
                 "files": [Path(f).name for f in self.files], "lastCut": self.last_cut}
+
+
+def kill_orphans(pid_dir):
+    """Cerrar ffmpeg de grabaciones que quedaron sueltos (el panel se cerro de golpe)."""
+    for f in Path(pid_dir).glob("*.pid"):
+        try:
+            pid = int(f.read_text().strip())
+        except (OSError, ValueError):
+            pid = None
+        if pid and _is_ffmpeg(pid):
+            try:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=15)
+                else:
+                    os.kill(pid, 15)
+            except Exception:
+                pass
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+
+def _is_ffmpeg(pid):
+    try:
+        if os.name == "nt":
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                 capture_output=True, text=True, timeout=15).stdout.lower()
+            return "ffmpeg" in out
+        return b"ffmpeg" in Path(f"/proc/{pid}/cmdline").read_bytes()
+    except Exception:
+        return False

@@ -298,14 +298,50 @@ def rec_action(name, action):
                         hint = (ss.profile_name, ss.crop, ss.loc_info)
                         break
                 start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
-            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True)
+            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True,
+                         pid_dir=Path(load_config()["data_dir"]) / "grabando")
             RECORDERS[name] = r
         r.start()
+        _remember_recording(name, True)
     elif r and action == "stop":
         threading.Thread(target=r.stop, daemon=True).start()
+        _remember_recording(name, False)
     elif r and action == "cut":
         threading.Thread(target=r.cut, daemon=True).start()
     return rec_infos()
+
+
+def _rec_state_path():
+    return Path(load_config()["data_dir"]) / "grabando.json"
+
+
+def _remember_recording(name, on):
+    """Que señales estan grabando: si el panel o la PC se reinician, siguen solas."""
+    p = _rec_state_path()
+    try:
+        names = set(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else set()
+    except Exception:
+        names = set()
+    (names.add if on else names.discard)(name)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(sorted(names), ensure_ascii=False), encoding="utf-8")
+
+
+def resume_recordings():
+    from .recorder import kill_orphans
+    kill_orphans(Path(load_config()["data_dir"]) / "grabando")
+    time.sleep(2)
+    p = _rec_state_path()
+    try:
+        names = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    except Exception:
+        names = []
+    for name in names:
+        try:
+            print(f"Retomando la grabación de {name}")
+            rec_action(name, "start")
+        except Exception:
+            traceback.print_exc()
 
 
 # ---------------------------------------------------------------- carpeta vigilada
@@ -702,6 +738,7 @@ def main():
     port = int(os.environ.get("HIGHLIGHT_PORT", "8790"))
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=watcher, daemon=True).start()
+    threading.Thread(target=resume_recordings, daemon=True).start()
     host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"Panel de highlights: http://127.0.0.1:{port}")
