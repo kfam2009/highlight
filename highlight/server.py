@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
     "auto_analyze": False,
     "auto_approve": "sugeridos_k",   # "", "sugeridos" o "sugeridos_k" (+ ponches de cierre)
     "auto_xml": True,                # dejar lista la linea para Premiere
-    "live_mode": False,              # analizar mientras se graba (MKV de OBS)
+    "live_mode": False,              # analizar mientras se graba (MKV que crece)
     # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
     "srt_sources": [],
     "auto_cut": True,                # cortar solo el archivo cuando termina cada partido

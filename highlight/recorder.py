@@ -1,4 +1,4 @@
-"""Grabar las senales SRT (Castr) directo desde el panel, sin OBS.
+"""Grabar las senales SRT (Castr) directo desde el panel.
 
 ffmpeg copia el video tal como llega (sin recodificar: casi no usa la PC) a
 un MKV en la carpeta de grabaciones. Si la senal se corta, sigue intentando y

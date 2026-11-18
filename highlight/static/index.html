@@ -120,7 +120,7 @@
       </label>
       <div class="muted" style="margin-top:4px">Cuando un video deja de crecer (terminó la grabación) se analiza solo.</div>
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
-        <input type="checkbox" id="liveOn" style="width:auto"> <span><b>En vivo</b>: analizar mientras se graba (OBS en MKV)</span>
+        <input type="checkbox" id="liveOn" style="width:auto"> <span><b>En vivo</b>: analizar los videos de la carpeta que todavía se están grabando</span>
       </label>
       <label for="autoApprove">Al terminar, pre-aprobar</label>
       <select id="autoApprove">
@@ -150,7 +150,7 @@
     <div class="box">
       <details>
         <summary>Configuración</summary>
-        <label for="folders">Carpetas donde OBS / vMix guardan los partidos (una por línea)</label>
+        <label for="folders">Carpeta de los partidos: ahí graba el panel y ahí podés poner otros videos (una por línea)</label>
         <textarea id="folders"></textarea>
         <div class="row" style="margin-top:6px"><button class="small" id="addFolder">Agregar carpeta…</button></div>
         <label for="srtList">Señales SRT para grabar (una por línea: <code>Nombre | srt://…</code>)</label>

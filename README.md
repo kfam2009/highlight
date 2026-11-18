@@ -1,6 +1,7 @@
 # Highlights · softball / béisbol
 
-Panel local para armar los highlights de un partido grabado (OBS / vMix).
+Panel local que graba las señales SRT de cada campo y arma los highlights de
+cada partido mientras se juega.
 La historia del juego sale del **scorebug**: cada cambio de outs, bases,
 carreras o entrada es una jugada, así **ninguna media entrada se pierde**,
 haya relato o no. El operador revisa las jugadas ordenadas por entrada,
@@ -12,11 +13,12 @@ para Premiere.
 1. Doble clic en **`iniciar_panel.bat`**. La primera vez prepara Python y las
    dependencias (tarda un par de minutos); después abre el panel en
    `http://127.0.0.1:8790`.
-2. En **Configuración** poné la carpeta donde OBS / vMix guardan las
-   grabaciones (una vez por PC).
-3. Marcá uno o varios juegos y **Analizar seleccionados**. Se analizan en
-   cola, uno detrás de otro; mientras tanto podés revisar el anterior. Un
-   archivo que se está grabando aparece como "grabando" y no se puede elegir.
+2. En **Configuración** cargá las señales SRT de cada campo (ver "Grabar las
+   señales SRT") y tocá **Grabar**. Cada partido se graba, se separa y se
+   analiza solo.
+3. Para un video que ya tengas (descargado, de Cloudflare, etc.): ponelo en la
+   carpeta de partidos, marcalo en **Juegos grabados** y **Analizar
+   seleccionados**. Se analizan en cola, uno detrás de otro.
 4. Abrí el análisis: las jugadas están agrupadas por media entrada.
    - **Aprobar / Descartar** (o teclas **A** / **D** con el mouse sobre el clip,
      **↑ ↓** para moverse, **espacio** para reproducir).
@@ -80,11 +82,11 @@ final (festejos y saludos), se pre-aprueban los sugeridos y se arma la línea
 para Premiere, igual que en el modo automático. También se puede arrancar a
 mano con el botón **En vivo** de un video que está grabando.
 
-Requisito: **grabar en MKV** (OBS: Ajustes → Salida → Grabación → Formato
-MKV). Un MP4 no se puede leer hasta que termina de grabarse. Para los
-highlights usá la señal **sin relato**.
+Las grabaciones del panel ya son MKV. Un MP4 que todavía se está grabando no
+se puede leer hasta que termina. Para los highlights usá la señal **sin
+relato**.
 
-### Grabar las señales SRT desde el panel (sin OBS)
+### Grabar las señales SRT
 
 En **Configuración → Señales SRT** poné una línea por campo:
 
