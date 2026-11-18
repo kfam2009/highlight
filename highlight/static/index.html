@@ -105,12 +105,20 @@
 </header>
 <main>
   <aside class="side">
+    <div class="box" id="recBox" style="display:none">
+      <h3>Grabar señales</h3>
+      <div class="list" id="recList"></div>
+      <div class="muted" id="recNote" style="margin-top:6px">Graba la señal tal cual llega (sin recodificar) en la carpeta de partidos y la analiza en vivo. <b>Cortar juego</b> cierra el partido y sigue grabando el próximo en un archivo nuevo.</div>
+    </div>
     <div class="box" id="autoBox">
       <h3>Modo automático <span class="tag" id="autoTag">apagado</span></h3>
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin:0">
         <input type="checkbox" id="autoOn" style="width:auto"> Analizar solo cada partido nuevo de la carpeta
       </label>
       <div class="muted" style="margin-top:4px">Cuando un video deja de crecer (terminó la grabación) se analiza solo.</div>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
+        <input type="checkbox" id="liveOn" style="width:auto"> <span><b>En vivo</b>: analizar mientras se graba (OBS en MKV)</span>
+      </label>
       <label for="autoApprove">Al terminar, pre-aprobar</label>
       <select id="autoApprove">
         <option value="sugeridos_k">Sugeridos + ponches de cierre</option>
@@ -142,6 +150,8 @@
         <label for="folders">Carpetas donde OBS / vMix guardan los partidos (una por línea)</label>
         <textarea id="folders"></textarea>
         <div class="row" style="margin-top:6px"><button class="small" id="addFolder">Agregar carpeta…</button></div>
+        <label for="srtList">Señales SRT para grabar (una por línea: <code>Nombre | srt://…</code>)</label>
+        <textarea id="srtList" placeholder="Campo 1 | srt://ingest.castr.io:9999?streamid=…&#10;Campo 2 | srt://…"></textarea>
         <label for="exportDir">Carpeta de exportación (vacío = datos/exportados)</label>
         <div class="row"><input id="exportDir" style="flex:1"><button class="small" id="browseExport">Examinar</button></div>
         <div class="row" style="margin-top:8px"><button class="blue" id="saveCfg" style="flex:1">Guardar</button></div>
@@ -179,22 +189,29 @@ async function loadConfig() {
   $('#autoOn').checked = !!state.config.auto_analyze;
   $('#autoApprove').value = state.config.auto_approve ?? 'sugeridos_k';
   $('#autoXml').checked = state.config.auto_xml !== false;
+  $('#liveOn').checked = !!state.config.live_mode;
+  $('#srtList').value = (state.config.srt_sources || []).map(x => x.name + ' | ' + x.url).join('\n');
   paintAuto();
+  pollRec();
   const p = await api('/api/profiles');
   $('#profile').innerHTML = `<option value="auto" ${state.config.default_profile === 'auto' ? 'selected' : ''}>Automático (busca el scorebug)</option>` + p.profiles.map(x => `<option value="${esc(x.name)}" ${x.name === state.config.default_profile ? 'selected' : ''}>${esc(x.name)} — ${esc(x.sport)}</option>`).join('');
 }
 function paintAuto() {
   const on = !!(state.config && state.config.auto_analyze);
-  const t = $('#autoTag'); t.textContent = on ? 'activo' : 'apagado'; t.className = 'tag ' + (on ? 'ok' : '');
+  const t = $('#autoTag'); t.textContent = on ? (state.config.live_mode ? 'activo · en vivo' : 'activo') : 'apagado'; t.className = 'tag ' + (on ? 'ok' : '');
 }
 async function saveAuto() {
-  state.config = await api('/api/config', { auto_analyze: $('#autoOn').checked, auto_approve: $('#autoApprove').value, auto_xml: $('#autoXml').checked });
+  state.config = await api('/api/config', { auto_analyze: $('#autoOn').checked, auto_approve: $('#autoApprove').value, auto_xml: $('#autoXml').checked, live_mode: $('#liveOn').checked });
   paintAuto();
   toast(state.config.auto_analyze ? 'Modo automático activo: los partidos nuevos se analizan solos' : 'Modo automático apagado');
 }
 async function saveConfig() {
   const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);
-  state.config = await api('/api/config', { video_folders: folders, export_dir: $('#exportDir').value.trim(), default_profile: $('#profile').value });
+  const srt = $('#srtList').value.split('\n').map(l => l.trim()).filter(Boolean).map((l, i) => {
+    const k = l.indexOf('|'); return k > 0 ? { name: l.slice(0, k).trim(), url: l.slice(k + 1).trim() } : { name: 'Campo ' + (i + 1), url: l };
+  }).filter(x => x.url);
+  state.config = await api('/api/config', { video_folders: folders, export_dir: $('#exportDir').value.trim(), default_profile: $('#profile').value, srt_sources: srt });
+  pollRec();
   toast('Configuración guardada'); loadVideos();
 }
 async function loadVideos() {
@@ -205,10 +222,11 @@ async function loadVideos() {
     <div class="item" title="${esc(v.path)}">
       <input type="checkbox" data-path="${esc(v.path)}" ${state.selected.has(v.path) ? 'checked' : ''} ${v.recording ? 'disabled' : ''} style="width:auto">
       <div><div class="name">${esc(v.name)}</div><div class="muted">${(v.sizeMb / 1024).toFixed(1)} GB · ${new Date(v.modified * 1000).toLocaleString()}</div></div>
-      <div>${v.recording ? '<span class="tag run">grabando</span>' : v.runId ? `<button class="small" data-open="${esc(v.runId)}">Abrir</button>` : ''}</div>
+      <div>${v.runId ? `<button class="small" data-open="${esc(v.runId)}">Abrir</button>` : v.recording ? `<button class="small" data-live="${esc(v.path)}" title="Analizar mientras se graba">En vivo</button>` : ''}</div>
     </div>`).join('');
   $$('input[type=checkbox]', el).forEach(cb => cb.onchange = () => cb.checked ? state.selected.add(cb.dataset.path) : state.selected.delete(cb.dataset.path));
   $$('[data-open]', el).forEach(b => b.onclick = () => openRun(b.dataset.open));
+  $$('[data-live]', el).forEach(b => b.onclick = async () => { await api('/api/live-start', { path: b.dataset.live, profile: $('#profile').value }); pollJobs(); toast('Análisis en vivo iniciado'); });
 }
 async function loadRuns() {
   const { runs } = await api('/api/runs');
@@ -228,21 +246,46 @@ async function loadRuns() {
   });
 }
 
+// ------------------------------------------------ grabar SRT
+let recTimer = null;
+async function pollRec() {
+  const r = await api('/api/rec');
+  $('#recBox').style.display = r.sources.length ? '' : 'none';
+  const color = { grabando: 'err', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
+  $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
+    const on = x.status !== 'detenido' && x.status !== 'error';
+    const mins = x.since ? Math.floor((Date.now() / 1000 - x.since) / 60) : 0;
+    return `<div class="item" style="grid-template-columns:1fr auto">
+      <div><div class="name"><span class="tag ${color[x.status] || ''}">${x.status === 'grabando' ? '● ' : ''}${esc(x.status)}</span> ${esc(x.name)}</div>
+        <div class="muted">${x.file ? esc(x.file) + ' · ' + (x.sizeMb || 0) + ' MB · ' + mins + ' min' : esc(x.message || '')}</div></div>
+      <div class="row" style="gap:4px">${on
+        ? `<button class="small" data-rec="${esc(x.name)}" data-act="cut" title="Cerrar este partido y seguir grabando el próximo">Cortar juego</button><button class="small danger" data-rec="${esc(x.name)}" data-act="stop">Detener</button>`
+        : `<button class="small primary" data-rec="${esc(x.name)}" data-act="start" ${r.srtOk ? '' : 'disabled'}>Grabar</button>`}</div>
+    </div>`;
+  }).join('');
+  $$('[data-rec]', $('#recList')).forEach(b => b.onclick = async () => {
+    if (b.dataset.act === 'stop' && !confirm('¿Detener la grabación de ' + b.dataset.rec + '?')) return;
+    if (b.dataset.act === 'cut' && !confirm('¿Cortar el partido de ' + b.dataset.rec + ' y empezar un archivo nuevo?')) return;
+    await api('/api/rec', { name: b.dataset.rec, action: b.dataset.act }); setTimeout(pollRec, 800); setTimeout(pollJobs, 1500);
+  });
+  clearTimeout(recTimer); recTimer = setTimeout(pollRec, r.sources.some(x => x.status !== 'detenido') ? 3000 : 15000);
+}
+
 // ------------------------------------------------ jobs
 let jobsTimer = null;
 async function pollJobs() {
   const { jobs } = await api('/api/jobs');
-  const active = jobs.filter(j => j.status === 'en cola' || j.status === 'analizando' || (Date.now() / 1000 - (j.finished || 0)) < 600);
+  const active = jobs.filter(j => j.live || j.status === 'en cola' || j.status === 'analizando' || (Date.now() / 1000 - (j.finished || 0)) < 600);
   $('#jobsBox').style.display = active.length ? '' : 'none';
   $('#jobs').innerHTML = active.map(j => `
     <div class="item" style="grid-template-columns:1fr auto">
-      <div><div class="name">${j.auto ? '<span class="tag ok">auto</span> ' : ''}${esc(j.name)}</div>
+      <div><div class="name">${j.live && !j.finished ? '<span class="tag err">● en vivo</span> ' : j.auto ? '<span class="tag ok">auto</span> ' : ''}${esc(j.name)}</div>
         <div class="muted">${esc(j.error || j.message || j.status)}</div>
         ${j.status === 'analizando' ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>` : ''}</div>
-      <div>${j.status === 'listo' ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
+      <div>${(j.status === 'listo' || (j.live && j.runId)) ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
     </div>`).join('');
   $$('[data-open]', $('#jobs')).forEach(b => b.onclick = () => openRun(b.dataset.open));
-  const busy = jobs.some(j => j.status === 'en cola' || j.status === 'analizando');
+  const busy = jobs.some(j => j.status === 'en cola' || j.status === 'analizando' || (j.live && !j.finished));
   if (state._busy && !busy) { loadRuns(); loadVideos(); }
   state._busy = busy;
   clearTimeout(jobsTimer); jobsTimer = setTimeout(pollJobs, busy ? 1500 : 6000);
@@ -255,12 +298,35 @@ async function analyzeSelected() {
 }
 
 // ------------------------------------------------ run view
+let liveTimer = null;
+function anyPlaying() { return $$('.card video').some(v => !v.paused && !v.ended); }
+async function liveRefresh() {
+  clearTimeout(liveTimer);
+  if (!state.run || !state.run.live) return;
+  try {
+    const r = await api('/api/run?id=' + encodeURIComponent(state.run.runId));
+    const known = new Set(state.run.clips.map(c => c.id));
+    const fresh = r.clips.filter(c => !known.has(c.id));
+    if (fresh.length && anyPlaying()) {
+      toast(`${fresh.length} jugada${fresh.length > 1 ? 's' : ''} nueva${fresh.length > 1 ? 's' : ''}: se agregan cuando pauses`, 4000);
+    } else if (fresh.length || r.live !== state.run.live) {
+      const y = window.scrollY;
+      r.decisions = state.decisions;
+      state.run = r; renderRun(); window.scrollTo(0, y);
+      if (fresh.length) toast(`${fresh.length} jugada${fresh.length > 1 ? 's' : ''} nueva${fresh.length > 1 ? 's' : ''}`, 3000);
+    } else {
+      state.run.liveStatus = r.liveStatus; const ls = $('#liveStatus'); if (ls) ls.textContent = r.liveStatus || '';
+    }
+  } catch (e) { }
+  liveTimer = setTimeout(liveRefresh, 20000);
+}
 async function openRun(id) {
   let run;
   try { run = await api('/api/run?id=' + encodeURIComponent(id)); }
   catch (err) { return toast('No se pudo abrir el análisis: ' + err.message, 8000); }
   state.run = run; state.decisions = run.decisions || {};
   renderRun(); loadRuns();
+  liveRefresh();
 }
 function dec(id) { return state.decisions[id] || (state.decisions[id] = {}); }
 let saveTimer = null;
@@ -290,7 +356,8 @@ function renderRun() {
   $('#content').innerHTML = `
     <div class="box">
       <div class="runhead">
-        <div><div class="title">${esc(r.videoName)}</div><div class="muted">${fmt(r.duration)} de video · perfil ${esc(r.profile)}</div></div>
+        <div><div class="title">${r.live ? '<span class="tag err">● EN VIVO</span> ' : ''}${esc(r.videoName)}</div><div class="muted">${fmt(r.duration)} de video · perfil ${esc(r.profile)}</div>
+          ${r.live ? `<div class="muted" id="liveStatus">${esc(r.liveStatus || '')}</div>` : ''}</div>
         <div class="row">
           <button id="reanalyze" title="Vuelve a armar la historia con la última versión del programa, sin leer el video de nuevo">Re-analizar</button>
           <button id="approveSug" title="Carreras, hits, doble plays, 3er out con corredores y el final">Aprobar sugeridos</button>
@@ -531,7 +598,7 @@ async function exportApproved() {
 $('#refreshVideos').onclick = loadVideos;
 $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
-['#autoOn', '#autoApprove', '#autoXml'].forEach(id => $(id).onchange = saveAuto);
+['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
 $('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };
 $('#browseExport').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20exportacion'); if (r.folder) $('#exportDir').value = r.folder; };
 (async () => { await loadConfig(); loadVideos(); loadRuns(); pollJobs(); })().catch(e => toast(e.message));

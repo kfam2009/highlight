@@ -69,6 +69,21 @@ grabación). Al terminar puede pre-aprobar los sugeridos (y los ponches que
 cierran entradas) y dejar armada la línea para Premiere. Vos solo abrís el
 análisis, revisás y ajustás.
 
+### En vivo (mientras se graba)
+
+Tildá también **En vivo**. Un archivo que se está grabando en la carpeta
+empieza a leerse solo, sin esperar el final del partido: las jugadas aparecen
+en el panel más o menos un minuto después de que cambia el scorebug, agrupadas
+por media entrada, y se pueden ir aprobando durante el juego. Cuando la
+grabación termina (3 minutos sin crecer) se cierra el análisis: se agrega el
+final (festejos y saludos), se pre-aprueban los sugeridos y se arma la línea
+para Premiere, igual que en el modo automático. También se puede arrancar a
+mano con el botón **En vivo** de un video que está grabando.
+
+Requisito: **grabar en MKV** (OBS: Ajustes → Salida → Grabación → Formato
+MKV). Un MP4 no se puede leer hasta que termina de grabarse. Para los
+highlights usá la señal **sin relato**.
+
 Arriba de cada análisis hay un control de entradas: dice si están todas las
 medias entradas o cuáles conviene revisar (scorebug que no se vio, entrada sin
 jugadas detectadas).
@@ -111,6 +126,7 @@ iniciar_panel.bat / actualizar.bat
 highlight/
   server.py     servidor local, cola de análisis, exportación
   analyze.py    orquesta un análisis completo
+  live.py       análisis en vivo de una grabación que sigue creciendo
   extract.py    pasada única de ffmpeg sobre el original
   scorebug.py   lectura del scorebug cuadro por cuadro
   events.py     historia del partido y ubicación de cada lanzamiento

@@ -58,6 +58,10 @@ def locate(video, profile, duration, n=20, min_score=0.8):
     """Devuelve (crop, info). crop es el dict {x,y,w,h} en fracciones del
     cuadro, o None si no hay que cambiar nada / no se encontro."""
     frames = grab_frames(video, duration, n=n)
+    return locate_frames(frames, profile, min_score)
+
+
+def locate_frames(frames, profile, min_score=0.8):
     if not frames:
         return None, {"status": "sin fotos"}
     tpl, (bx, by), tmask = _template(profile)

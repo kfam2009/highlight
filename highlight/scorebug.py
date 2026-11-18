@@ -162,7 +162,7 @@ def _glyph_specs(cfg):
     return specs
 
 
-def read_scorebug_video(path, profile, progress=None):
+def read_scorebug_video(path, profile, progress=None, cache=None):
     """Devuelve dict con listas por campo, una entrada por cuadro.
 
     Reglas que cambian segun el diseno del grafico (profile.json):
@@ -179,9 +179,16 @@ def read_scorebug_video(path, profile, progress=None):
     pts = cfg["points"]
     gt = cfg.get("glyph_threshold", 140)
     specs = _glyph_specs(cfg)
-    readers = {n: GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
-                              binarize=sp["binarize"], match=sp["match"],
-                              strict_left=sp.get("strict_left", 0.0)) for n, sp in specs.items()}
+    # cache: en vivo se leen tramos sucesivos; se reusan los lectores para que
+    # un numero desconocido ("?n") siga teniendo el mismo id entre tramos
+    if cache is not None and "readers" in cache:
+        readers = cache["readers"]
+    else:
+        readers = {n: GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
+                                  binarize=sp["binarize"], match=sp["match"],
+                                  strict_left=sp.get("strict_left", 0.0)) for n, sp in specs.items()}
+        if cache is not None:
+            cache["readers"] = readers
     pthr = cfg.get("presence_threshold", 20)
     bases_rule = cfg.get("bases_rule", "bright")
     mph_cfg = cfg.get("mph", {"rule": "red_center"})

@@ -36,6 +36,9 @@ DEFAULT_CONFIG = {
     "auto_analyze": False,
     "auto_approve": "sugeridos_k",   # "", "sugeridos" o "sugeridos_k" (+ ponches de cierre)
     "auto_xml": True,                # dejar lista la linea para Premiere
+    "live_mode": False,              # analizar mientras se graba (MKV de OBS)
+    # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
+    "srt_sources": [],
 }
 
 
@@ -205,6 +208,82 @@ def auto_finish(m):
     return extra
 
 
+# ---------------------------------------------------------------- en vivo
+
+LIVE = {}
+
+
+def start_live(path, profile="auto"):
+    from .live import LiveSession
+
+    path = str(Path(path).resolve())
+    s = LIVE.get(path)
+    if s and not s.finished and s.status != "error":
+        return s.info()
+
+    def done(m):
+        return auto_finish(m) if m else ""
+
+    s = LiveSession(path, runs_dir(), profile, on_done=done).start()
+    LIVE[path] = s
+    return s.info()
+
+
+def stop_live(path):
+    s = LIVE.get(str(Path(path).resolve()))
+    if s:
+        s.stop()
+        return s.info()
+    return {"error": "no hay sesion en vivo"}
+
+
+# ---------------------------------------------------------------- grabar SRT
+
+RECORDERS = {}
+_SRT_OK = None
+
+
+def rec_folder():
+    folders = load_config()["video_folders"]
+    return Path(folders[0]).expanduser() if folders else REPO / "grabaciones"
+
+
+def rec_infos():
+    global _SRT_OK
+    if not _SRT_OK:
+        from .recorder import has_srt
+        _SRT_OK = has_srt()
+    out = []
+    for src in load_config().get("srt_sources", []):
+        r = RECORDERS.get(src["name"])
+        info = r.info() if r else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
+                                   "file": None, "sizeMb": None, "since": None, "files": []}
+        out.append(info)
+    return {"sources": out, "srtOk": _SRT_OK}
+
+
+def rec_action(name, action):
+    from .recorder import Recorder
+
+    src = next((s for s in load_config().get("srt_sources", []) if s["name"] == name), None)
+    if not src:
+        return {"error": f"no hay una señal llamada {name}"}
+    r = RECORDERS.get(name)
+    if action == "start":
+        if not r or r.url != src["url"] or not (r.thread and r.thread.is_alive()):
+            def new_file(path):
+                # cada archivo nuevo se analiza en vivo mientras se graba
+                start_live(path, load_config().get("default_profile") or "auto")
+            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file)
+            RECORDERS[name] = r
+        r.start()
+    elif r and action == "stop":
+        threading.Thread(target=r.stop, daemon=True).start()
+    elif r and action == "cut":
+        threading.Thread(target=r.cut, daemon=True).start()
+    return rec_infos()
+
+
 # ---------------------------------------------------------------- carpeta vigilada
 
 _SEEN_SIZES = {}
@@ -219,8 +298,15 @@ def watcher(period=30, settle_s=120):
             cfg = load_config()
             if cfg.get("auto_analyze"):
                 busy = {j["path"] for j in JOBS if j["status"] in ("en cola", "analizando")}
+                busy |= {p for p, ss in LIVE.items() if not (ss.finished or ss.status == "error")}
                 for v in scan_videos():
                     if v.get("runId") or v["path"] in busy or v["path"] in _AUTO_FAILED:
+                        continue
+                    if cfg.get("live_mode") and time.time() - v["modified"] < 60 and v["path"] not in LIVE:
+                        # se esta grabando: analizar en vivo
+                        start_live(v["path"], cfg.get("default_profile") or "auto")
+                        continue
+                    if v["path"] in LIVE:
                         continue
                     if any(j["path"] == v["path"] and j["status"] == "error" for j in JOBS):
                         _AUTO_FAILED.add(v["path"])
@@ -428,7 +514,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/run":
                 return self.send_json(load_run(q.get("id", [""])[0]))
             if path == "/api/jobs":
-                return self.send_json({"jobs": JOBS[-30:]})
+                return self.send_json({"jobs": JOBS[-30:] + [ss.info() for ss in LIVE.values()]})
+            if path == "/api/rec":
+                return self.send_json(rec_infos())
             if path == "/api/browse-folder":
                 return self.send_json(browse_folder(q.get("title", ["Elegir carpeta"])[0]))
             if path.startswith("/media/"):
@@ -454,7 +542,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/config":
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
-                          "auto_analyze", "auto_approve", "auto_xml"):
+                          "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
+                          "srt_sources"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
@@ -463,6 +552,12 @@ class Handler(BaseHTTPRequestHandler):
                 profile = body.get("profile") or load_config()["default_profile"]
                 jobs = [enqueue(p, profile) for p in body.get("paths", [])]
                 return self.send_json({"jobs": jobs})
+            if u.path == "/api/live-start":
+                return self.send_json(start_live(body["path"], body.get("profile") or load_config()["default_profile"]))
+            if u.path == "/api/rec":
+                return self.send_json(rec_action(body["name"], body["action"]))
+            if u.path == "/api/live-stop":
+                return self.send_json(stop_live(body["path"]))
             if u.path == "/api/reanalyze":
                 m = load_run(body["runId"])
                 job = enqueue(m["video"], body.get("profile") or m.get("profile"), reuse_run=body["runId"])
