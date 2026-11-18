@@ -326,10 +326,10 @@ async function paintMonitor() {
       screen.innerHTML = `<img src="/api/rec-live?name=${encodeURIComponent(x.name)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain">`;
       $('img', screen).onerror = () => { screen.dataset.on = ''; };
     } else if (!x.hasPreview) {
-      screen.dataset.on = ''; screen.innerHTML = `<span class="muted">${esc(x.message || 'Sin señal')}</span>`;
+      screen.dataset.on = ''; screen.innerHTML = `<span class="muted">${esc(x.message || (x.status === 'detenido' ? 'Detenido' : 'Conectando…'))}</span>`;
     }
     const lb = $('.m-listen', card);
-    $('.m-noaudio', card).style.display = x.hasAudio ? 'none' : '';
+    $('.m-noaudio', card).style.display = (x.hasAudio || !x.hasPreview) ? 'none' : '';
     lb.style.display = x.hasAudio ? '' : 'none';
     if (x.hasAudio && x.hasPreview) {
       const a = monAudioFor(x.name);
@@ -342,7 +342,7 @@ async function paintMonitor() {
         };
       }
     }
-    $('.m-score', card).textContent = sbText(lv.scoreNow);
+    $('.m-score', card).textContent = x.status === 'detenido' ? 'Tocá Grabar para conectar la señal' : sbText(lv.scoreNow);
     $('.m-file', card).textContent = (x.file ? x.file + ' · ' + (x.sizeMb || 0) + ' MB' : '') + (lv.message ? ' · ' + lv.message : '');
     $('.m-cut', card).textContent = x.lastCut ? 'Último corte: ' + x.lastCut : '';
     const ob = $('.m-open', card); ob.style.display = lv.runId ? '' : 'none';
