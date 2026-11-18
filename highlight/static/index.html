@@ -105,7 +105,7 @@
 </header>
 <main>
   <aside class="side">
-    <div class="box" id="recBox" style="display:none">
+    <div class="box" id="recBox">
       <h3>Grabar señales <button class="small" id="openMonitor">Monitor</button></h3>
       <div class="list" id="recList"></div>
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
@@ -355,10 +355,14 @@ async function paintMonitor() {
 let recTimer = null;
 async function pollRec() {
   const r = await api('/api/rec');
-  $('#recBox').style.display = r.sources.length ? '' : 'none';
+  $('#recBox').style.display = '';
+  if (!r.sources.length) {
+    $('#recList').innerHTML = `<div class="muted">Todavía no hay señales. Abrí <b>Configuración</b> (abajo) y en <b>Señales SRT</b> poné una línea por campo:<br><code>Campo 1 | srt://…</code><br><code>Campo 2 | srt://…</code><br>Después <b>Guardar</b> y aparece el botón Grabar de cada campo.</div><div class="row" style="margin-top:6px"><button class="small" id="goCfg">Ir a Configuración</button></div>`;
+    $('#goCfg').onclick = () => { const d = $('details'); d.open = true; d.scrollIntoView({ behavior: 'smooth' }); $('#srtList').focus(); };
+  }
   $('#autoCut').checked = r.autoCut !== false;
   const color = { grabando: 'err', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
-  $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
+  if (r.sources.length) $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
     const on = x.status !== 'detenido' && x.status !== 'error';
     const mins = x.since ? Math.floor((Date.now() / 1000 - x.since) / 60) : 0;
     return `<div class="item" style="grid-template-columns:1fr auto">
