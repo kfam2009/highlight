@@ -84,6 +84,23 @@ Requisito: **grabar en MKV** (OBS: Ajustes → Salida → Grabación → Formato
 MKV). Un MP4 no se puede leer hasta que termina de grabarse. Para los
 highlights usá la señal **sin relato**.
 
+### Grabar las señales SRT desde el panel (sin OBS)
+
+En **Configuración → Señales SRT** poné una línea por campo:
+
+```
+Campo 1 | srt://…   (el link SRT que da Castr)
+Campo 2 | srt://…
+```
+
+Aparece la caja **Grabar señales** con un botón **Grabar** por campo. El panel
+copia la señal tal como llega (sin recodificar, casi no usa la PC) a un MKV en
+la carpeta de partidos y lo analiza en vivo. Si la señal se corta, reintenta
+solo y sigue en un archivo nuevo. **Cortar juego** cierra el partido actual y
+empieza el próximo en otro archivo. Necesita un ffmpeg con SRT: si el panel
+avisa que falta, en PowerShell `winget install Gyan.FFmpeg` y reiniciar el
+panel.
+
 Arriba de cada análisis hay un control de entradas: dice si están todas las
 medias entradas o cuáles conviene revisar (scorebug que no se vio, entrada sin
 jugadas detectadas).
