@@ -73,8 +73,9 @@ def _with_timeout(url):
 
 
 class Recorder:
-    def __init__(self, name, url, folder, on_new_file=None):
+    def __init__(self, name, url, folder, on_new_file=None, preview=None):
         self.name, self.url, self.folder = name, url, Path(folder)
+        self.preview = Path(preview) if preview else None   # foto de la senal cada 2 s (monitor)
         self.on_new_file = on_new_file
         self.proc = None
         self.file = None
@@ -82,6 +83,7 @@ class Recorder:
         self.status = "detenido"
         self.message = ""
         self.started_file_at = None
+        self.last_cut = ""
         self._stop = threading.Event()
         self._cut = threading.Event()
         self.thread = None
@@ -99,8 +101,9 @@ class Recorder:
         self._stop.set()
         self._kill()
 
-    def cut(self):
+    def cut(self, reason=""):
         """Cerrar el archivo actual y seguir grabando en uno nuevo."""
+        self.last_cut = f"{datetime.now():%H:%M} {reason or 'corte a mano'}"
         self._cut.set()
         self._kill()
 
@@ -135,6 +138,10 @@ class Recorder:
             cmd = [srt_ffmpeg() or ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
                    "-i", _with_timeout(self.url),
                    "-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-f", "matroska", str(path)]
+            if self.preview:
+                self.preview.parent.mkdir(parents=True, exist_ok=True)
+                cmd += ["-map", "0:v:0", "-vf", "fps=1/2,scale=640:-2", "-q:v", "6", "-update", "1", "-atomic_writing", "1",
+                        "-f", "image2", str(self.preview)]
             if self.status != "sin señal":
                 self.status, self.message = "conectando", "Esperando la señal"
             t0 = time.time()
@@ -186,4 +193,4 @@ class Recorder:
         return {"name": self.name, "url": self.url, "status": self.status, "message": self.message,
                 "file": Path(self.file).name if self.file else None, "sizeMb": size,
                 "since": self.started_file_at if self.file else None,
-                "files": [Path(f).name for f in self.files]}
+                "files": [Path(f).name for f in self.files], "lastCut": self.last_cut}

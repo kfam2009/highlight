@@ -106,9 +106,12 @@
 <main>
   <aside class="side">
     <div class="box" id="recBox" style="display:none">
-      <h3>Grabar señales</h3>
+      <h3>Grabar señales <button class="small" id="openMonitor">Monitor</button></h3>
       <div class="list" id="recList"></div>
-      <div class="muted" id="recNote" style="margin-top:6px">Graba la señal tal cual llega (sin recodificar) en la carpeta de partidos y la analiza en vivo. <b>Cortar juego</b> cierra el partido y sigue grabando el próximo en un archivo nuevo.</div>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
+        <input type="checkbox" id="autoCut" style="width:auto"> <span>Separar los partidos solo (fin del juego en el scorebug)</span>
+      </label>
+      <div class="muted" id="recNote" style="margin-top:6px">Graba la señal tal cual llega (sin recodificar) en la carpeta de partidos y la analiza en vivo. Cuando termina un partido lo cierra y sigue con el próximo en un archivo nuevo. <b>Cortar juego</b> hace lo mismo a mano.</div>
     </div>
     <div class="box" id="autoBox">
       <h3>Modo automático <span class="tag" id="autoTag">apagado</span></h3>
@@ -246,18 +249,57 @@ async function loadRuns() {
   });
 }
 
+// ------------------------------------------------ monitor de señales
+let monTimer = null;
+function sbText(sc) {
+  if (!sc) return 'Esperando el scorebug';
+  if (sc.over) return 'Partido terminado ' + (sc.away ?? '?') + '-' + (sc.home ?? '?');
+  const half = sc.half === 'T' ? 'alta' : sc.half === 'B' ? 'baja' : '';
+  return `${sc.inning ?? '?'}ª ${half} · ${sc.away ?? '?'}-${sc.home ?? '?'} · ${sc.outs ?? '?'} out${sc.count ? ' · ' + sc.count : ''}${sc.onAir ? '' : ' · (sin scorebug en pantalla)'}`;
+}
+function openMonitor() {
+  state.run = null; loadRuns();
+  $('#content').innerHTML = `<div class="box"><h3>Monitor de señales <span class="muted" style="text-transform:none;letter-spacing:0">se actualiza cada 2 s</span></h3><div id="monGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px"></div></div>`;
+  paintMonitor();
+}
+async function paintMonitor() {
+  clearTimeout(monTimer);
+  const grid = $('#monGrid'); if (!grid) return;
+  const r = await api('/api/rec');
+  const t = Date.now();
+  grid.innerHTML = r.sources.map(x => {
+    const lv = x.live || {};
+    const rec = x.status === 'grabando';
+    return `<div class="box" style="padding:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <b>${esc(x.name)}</b><span class="tag ${rec ? 'err' : 'run'}">${rec ? '● ' : ''}${esc(x.status)}</span></div>
+      <div style="aspect-ratio:16/9;background:#000;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+        ${x.hasPreview ? `<img src="/api/rec-preview?name=${encodeURIComponent(x.name)}&t=${t}" style="width:100%;height:100%;object-fit:contain" onerror="this.style.visibility='hidden'">` : `<span class="muted">${esc(x.message || 'Sin señal')}</span>`}
+      </div>
+      <div style="margin-top:8px;font-size:15px">${esc(sbText(lv.scoreNow))}</div>
+      <div class="muted">${x.file ? esc(x.file) + ' · ' + (x.sizeMb || 0) + ' MB' : ''}${lv.message ? ' · ' + esc(lv.message) : ''}</div>
+      ${x.lastCut ? `<div class="muted">Último corte: ${esc(x.lastCut)}</div>` : ''}
+      <div class="row" style="margin-top:6px;gap:6px">${lv.runId ? `<button class="small" data-open="${esc(lv.runId)}">Abrir jugadas</button>` : ''}</div>
+    </div>`;
+  }).join('') || '<div class="muted">No hay señales configuradas (Configuración → Señales SRT).</div>';
+  $$('[data-open]', grid).forEach(b => b.onclick = () => { clearTimeout(monTimer); openRun(b.dataset.open); });
+  monTimer = setTimeout(paintMonitor, 2000);
+}
+
 // ------------------------------------------------ grabar SRT
 let recTimer = null;
 async function pollRec() {
   const r = await api('/api/rec');
   $('#recBox').style.display = r.sources.length ? '' : 'none';
+  $('#autoCut').checked = r.autoCut !== false;
   const color = { grabando: 'err', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
   $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
     const on = x.status !== 'detenido' && x.status !== 'error';
     const mins = x.since ? Math.floor((Date.now() / 1000 - x.since) / 60) : 0;
     return `<div class="item" style="grid-template-columns:1fr auto">
       <div><div class="name"><span class="tag ${color[x.status] || ''}">${x.status === 'grabando' ? '● ' : ''}${esc(x.status)}</span> ${esc(x.name)}</div>
-        <div class="muted">${x.file ? esc(x.file) + ' · ' + (x.sizeMb || 0) + ' MB · ' + mins + ' min' : esc(x.message || '')}</div></div>
+        <div class="muted">${x.file ? esc(x.file) + ' · ' + (x.sizeMb || 0) + ' MB · ' + mins + ' min' : esc(x.message || '')}</div>
+        ${x.lastCut ? `<div class="muted">Último corte: ${esc(x.lastCut)} · ${x.files.length} archivos</div>` : ''}</div>
       <div class="row" style="gap:4px">${on
         ? `<button class="small" data-rec="${esc(x.name)}" data-act="cut" title="Cerrar este partido y seguir grabando el próximo">Cortar juego</button><button class="small danger" data-rec="${esc(x.name)}" data-act="stop">Detener</button>`
         : `<button class="small primary" data-rec="${esc(x.name)}" data-act="start" ${r.srtOk ? '' : 'disabled'}>Grabar</button>`}</div>
@@ -598,6 +640,8 @@ async function exportApproved() {
 $('#refreshVideos').onclick = loadVideos;
 $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
+$('#openMonitor').onclick = openMonitor;
+$('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
 $('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };
 $('#browseExport').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20exportacion'); if (r.folder) $('#exportDir').value = r.folder; };

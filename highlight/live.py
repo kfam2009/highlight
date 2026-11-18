@@ -87,11 +87,16 @@ def load_ctx_raw(path):
 
 
 class LiveSession:
-    def __init__(self, video, runs_dir, profile_name="auto", on_done=None):
+    def __init__(self, video, runs_dir, profile_name="auto", on_done=None, on_game_over=None, profile_hint=None):
         self.video = Path(video).resolve()
         self.runs_dir = Path(runs_dir)
         self.profile_name = profile_name
         self.on_done = on_done
+        self.on_game_over = on_game_over   # grabacion de todo el dia: avisar fin del partido
+        self.profile_hint = profile_hint   # (perfil, recorte, info) del partido anterior del mismo campo
+        self.game_over = None
+        self.profile = None
+        self.crop = None
         self.status = "esperando"
         self.message = "Esperando los primeros minutos de grabación"
         self.error = None
@@ -115,7 +120,22 @@ class LiveSession:
         return {"id": "live_" + self.run_id, "path": str(self.video), "name": self.video.name, "status": self.status,
                 "message": self.message, "error": self.error, "runId": self.run_id if self.run_dir.exists() else None,
                 "progress": None, "live": True, "processed": round(self.processed_s, 1), "auto": True,
-                "finished": self.finished}
+                "finished": self.finished, "scoreNow": self.score_now()}
+
+    def score_now(self):
+        """Lo ultimo que dice el scorebug (para el monitor)."""
+        r = self.raw
+        if not r or not r.get("present"):
+            return None
+        out = {}
+        for k in ("inning", "half", "outs", "away", "home", "count"):
+            v = next((x for x in reversed(r[k][-300:]) if x is not None), None)
+            out[k] = v
+        out["onAir"] = bool(any(r["present"][-10:]))
+        out["at"] = round(self.processed_s, 1)
+        if self.game_over:
+            out["over"] = self.game_over.get("reason")
+        return out
 
     def start(self):
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -130,7 +150,7 @@ class LiveSession:
     # ------------------------------------------------------------------ main
     def _run(self):
         try:
-            if not self._wait_initial():
+            if not self._wait_initial(20 * 1024 * 1024 if self.profile_hint else 150 * 1024 * 1024):
                 self.status, self.finished = "corto", True
                 self.message = "Grabación muy corta, no se analiza (se puede analizar a mano)"
                 return
@@ -174,6 +194,11 @@ class LiveSession:
     def _pick_profile(self):
         self.status = "en vivo"
         self.message = "Buscando el scorebug"
+        if self.profile_hint:
+            # mismo campo, misma transmision: el scorebug esta donde estaba
+            self.profile_name, self.crop, self.loc_info = self.profile_hint
+            self.profile = Profile(self.profile_name)
+            return
         frames = []
         for _ in range(20):
             frames = _frames_from_start(self.video)
@@ -184,9 +209,11 @@ class LiveSession:
         best = _locate_in_frames(frames, names)
         if not best:
             # el scorebug puede aparecer recien cuando arranca el juego: reintentar
-            for _ in range(10):
+            for k in range(40):
                 time.sleep(60)
-                frames = _frames_from_start(self.video, seconds=900, every=30)
+                if self.stop_flag:
+                    break
+                frames = _frames_from_start(self.video, seconds=min(3600, 600 + 60 * k), every=30)
                 best = _locate_in_frames(frames, names)
                 if best:
                     break
@@ -251,6 +278,16 @@ class LiveSession:
         if not self.raw or not self.raw["present"]:
             return
         self.processed_s = len(self.raw["present"]) / self.profile.fps
+        if self.on_game_over and not self.game_over and not final:
+            sport = str(self.profile.cfg.get("sport", "")).lower()
+            reg = int(self.profile.cfg.get("innings") or (9 if ("beis" in sport or "baseball" in sport) else 7))
+            over = ev_mod.detect_game_over(self.raw, self.profile.fps, regulation=reg)
+            if over:
+                self.game_over = over
+                try:
+                    self.on_game_over(self, over)
+                except Exception:
+                    traceback.print_exc()
         ctx = load_ctx_raw(self.work / "contexto.raw")
         stingers = find_stingers(ctx, self.profile.stinger)
         rms = load_audio_rms_raw(self.work / "audio.raw")

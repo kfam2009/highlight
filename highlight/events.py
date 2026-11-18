@@ -611,3 +611,51 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
     final = final_segment(events, raw["present"], fps, mph)
     return {"story": story, "events": events, "final": final, "mph": mph, "replays": blocks,
             "pitchMarks": pnum_changes(raw, fps)}
+
+
+MERCY = {7: [(3, 15), (4, 10), (5, 7)], 9: [(5, 15), (7, 10)]}
+
+
+def detect_game_over(raw, fps, regulation=7, absence_s=180.0, long_absence_s=900.0, reset_hold_s=30.0):
+    """Para la grabacion de todo el dia: avisa cuando el partido termino.
+
+    - "nuevo partido": el scorebug vuelve en 1ª entrada y 0-0 (empezo otro).
+    - "fin": el scorebug se fue hace ``absence_s`` y el ultimo marcador es de
+      partido terminado (entrada reglamentaria con ganador, o diferencia de
+      nocaut).
+    - "pausa larga": el scorebug no aparece hace ``long_absence_s``.
+    Devuelve None o {"reason", "t" (fin del partido en el video), "score", "inning"}.
+    """
+    present = raw.get("present") or []
+    n = len(present)
+    if n == 0:
+        return None
+    st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    infer_innings(st)
+    gi = game_end_index(st)
+    if gi is not None:
+        hold = int(reset_hold_s * fps)
+        if gi + hold <= n and all(_num(st["inning"][i]) == 1 and _num(st["away"][i]) == 0 and _num(st["home"][i]) == 0
+                                  for i in range(gi, gi + hold)):
+            before = gi - 1
+            return {"reason": "nuevo partido", "t": gi / fps,
+                    "score": f"{st['away'][before]}-{st['home'][before]}" if before >= 0 else "",
+                    "inning": _num(st["inning"][before]) if before >= 0 else None}
+    end = gi if gi is not None else n
+    L = next((i for i in range(end - 1, -1, -1) if present[i]), None)
+    if L is None:
+        return None
+    gone = (n - 1 - L) / fps
+    inn = _num(st["inning"][L])
+    a, h = st["away"][L], st["home"][L]
+    if inn is None:
+        return None
+    na, nh = _num(a), _num(h)
+    diff = abs(na - nh) if na is not None and nh is not None else (1 if a != h else 0)
+    mercy = any(inn >= i and diff >= d for i, d in MERCY.get(regulation, MERCY[7]))
+    info = {"t": L / fps, "score": f"{a}-{h}", "inning": inn}
+    if gone >= absence_s and diff > 0 and (inn >= regulation or mercy):
+        return {"reason": "fin", **info}
+    if gone >= long_absence_s and inn >= 3:
+        return {"reason": "pausa larga", **info}
+    return None

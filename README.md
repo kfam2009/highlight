@@ -97,7 +97,13 @@ Aparece la caja **Grabar señales** con un botón **Grabar** por campo. El panel
 copia la señal tal como llega (sin recodificar, casi no usa la PC) a un MKV en
 la carpeta de partidos y lo analiza en vivo. Si la señal se corta, reintenta
 solo y sigue en un archivo nuevo. **Cortar juego** cierra el partido actual y
-empieza el próximo en otro archivo. Necesita un ffmpeg con SRT: si el panel
+empieza el próximo en otro archivo. Con **Separar los partidos solo** (viene
+activado) no hace falta: cuando el scorebug muestra un partido terminado
+(7ª entrada o nocaut con ganador) y se va de pantalla unos minutos, o vuelve
+en 1ª entrada 0-0, el panel corta el archivo y arranca el próximo partido.
+**Monitor** muestra la imagen de cada señal (una foto cada 2 s, sacada de lo
+que ya se está grabando: no gasta internet ni Cloudflare) y lo que dice el
+scorebug. Necesita un ffmpeg con SRT: si el panel
 avisa que falta, en PowerShell `winget install Gyan.FFmpeg` y reiniciar el
 panel.
 

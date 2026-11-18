@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
     "live_mode": False,              # analizar mientras se graba (MKV de OBS)
     # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
     "srt_sources": [],
+    "auto_cut": True,                # cortar solo el archivo cuando termina cada partido
 }
 
 
@@ -213,7 +214,7 @@ def auto_finish(m):
 LIVE = {}
 
 
-def start_live(path, profile="auto"):
+def start_live(path, profile="auto", on_game_over=None, hint=None):
     from .live import LiveSession
 
     path = str(Path(path).resolve())
@@ -224,7 +225,7 @@ def start_live(path, profile="auto"):
     def done(m):
         return auto_finish(m) if m else ""
 
-    s = LiveSession(path, runs_dir(), profile, on_done=done).start()
+    s = LiveSession(path, runs_dir(), profile, on_done=done, on_game_over=on_game_over, profile_hint=hint).start()
     LIVE[path] = s
     return s.info()
 
@@ -256,10 +257,15 @@ def rec_infos():
     out = []
     for src in load_config().get("srt_sources", []):
         r = RECORDERS.get(src["name"])
-        info = r.info() if r else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
+        info = r.info() if r else None
+        if info is not None:
+            ss = LIVE.get(str(Path(r.file).resolve())) if r.file else None
+            info["live"] = ss.info() if ss else None
+            info["hasPreview"] = bool(r.preview and r.preview.exists() and r.file)
+        info = info if info is not None else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
                                    "file": None, "sizeMb": None, "since": None, "files": []}
         out.append(info)
-    return {"sources": out, "srtOk": _SRT_OK}
+    return {"sources": out, "srtOk": _SRT_OK, "autoCut": load_config().get("auto_cut", True)}
 
 
 def rec_action(name, action):
@@ -271,10 +277,28 @@ def rec_action(name, action):
     r = RECORDERS.get(name)
     if action == "start":
         if not r or r.url != src["url"] or not (r.thread and r.thread.is_alive()):
+            def game_over(session, over):
+                # fin del partido detectado en el scorebug: cerrar el archivo y
+                # seguir con el proximo partido en uno nuevo
+                rec = RECORDERS.get(name)
+                if rec and load_config().get("auto_cut", True) and rec.file and \
+                        Path(rec.file).resolve() == session.video:
+                    why = {"fin": "fin del partido", "nuevo partido": "empezó otro partido",
+                           "pausa larga": "scorebug ausente mucho tiempo"}.get(over["reason"], over["reason"])
+                    rec.cut(f"{why} ({over.get('score', '')}, {over.get('inning')}ª)")
+
             def new_file(path):
                 # cada archivo nuevo se analiza en vivo mientras se graba
-                start_live(path, load_config().get("default_profile") or "auto")
-            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file)
+                rec = RECORDERS.get(name)
+                hint = None
+                for prev in reversed(rec.files[:-1] if rec else []):
+                    ss = LIVE.get(str(Path(prev).resolve()))
+                    if ss and ss.profile is not None:
+                        hint = (ss.profile_name, ss.crop, ss.loc_info)
+                        break
+                start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
+            r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file,
+                         preview=Path(load_config()["data_dir"]) / "monitor" / f"{safe_name(name)}.jpg")
             RECORDERS[name] = r
         r.start()
     elif r and action == "stop":
@@ -517,6 +541,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"jobs": JOBS[-30:] + [ss.info() for ss in LIVE.values()]})
             if path == "/api/rec":
                 return self.send_json(rec_infos())
+            if path == "/api/rec-preview":
+                r = RECORDERS.get(q.get("name", [""])[0])
+                if not r or not r.preview or not r.preview.exists():
+                    return self.send_error(404)
+                return self.serve_file(r.preview)
             if path == "/api/browse-folder":
                 return self.send_json(browse_folder(q.get("title", ["Elegir carpeta"])[0]))
             if path.startswith("/media/"):
@@ -543,7 +572,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources"):
+                          "srt_sources", "auto_cut"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
