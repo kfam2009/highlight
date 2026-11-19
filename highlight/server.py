@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .analyze import analyze
 from .render import adjusted_window, cut, safe_name
 from .scorebug import list_profiles
+from . import fixture as fixture_mod
 
 APP_DIR = Path(__file__).resolve().parent
 REPO = APP_DIR.parent
@@ -40,6 +41,7 @@ DEFAULT_CONFIG = {
     # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
     "srt_sources": [],
     "auto_cut": True,                # cortar solo el archivo cuando termina cada partido
+    "fixture": "u18_panam_2026.json",  # nombres de los partidos (highlight/fixtures/)
 }
 
 
@@ -301,8 +303,15 @@ def rec_action(name, action):
                         hint = (ss.profile_name, ss.crop, ss.loc_info)
                         break
                 start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
+            def game_title():
+                cfg = load_config()
+                s2 = next((x for x in cfg.get("srt_sources", []) if x["name"] == name), {})
+                fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
+                g = fixture_mod.match(fx, s2.get("field"))
+                return fixture_mod.title(g) if g else None
+
             r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True,
-                         pid_dir=Path(load_config()["data_dir"]) / "grabando")
+                         pid_dir=Path(load_config()["data_dir"]) / "grabando", title_fn=game_title)
             RECORDERS[name] = r
             r.record = action == "start"
             r.start()
@@ -320,6 +329,16 @@ def rec_action(name, action):
     elif r and action == "cut":
         threading.Thread(target=r.cut, daemon=True).start()
     return rec_infos()
+
+
+def fixture_edits_path():
+    return Path(load_config()["data_dir"]) / "fixture_cambios.json"
+
+
+def fixture_info():
+    cfg = load_config()
+    fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
+    return {"fixture": fx, "file": cfg.get("fixture"), "available": fixture_mod.list_fixtures()}
 
 
 def _rec_state_path():
@@ -604,6 +623,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"jobs": JOBS[-30:] + [ss.info() for ss in LIVE.values()]})
             if path == "/api/rec":
                 return self.send_json(rec_infos())
+            if path == "/api/fixture":
+                return self.send_json(fixture_info())
             if path == "/api/rec-audio":
                 return self.stream_audio(RECORDERS.get(q.get("name", [""])[0]))
             if path == "/api/rec-live":
@@ -634,7 +655,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut"):
+                          "srt_sources", "auto_cut", "fixture"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
@@ -649,6 +670,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(start_live(body["path"], body.get("profile") or load_config()["default_profile"]))
             if u.path == "/api/rec":
                 return self.send_json(rec_action(body["name"], body["action"]))
+            if u.path == "/api/fixture-edit":
+                fixture_mod.save_edit(fixture_edits_path(), body["n"], body)
+                return self.send_json(fixture_info())
             if u.path == "/api/live-stop":
                 return self.send_json(stop_live(body["path"]))
             if u.path == "/api/reanalyze":

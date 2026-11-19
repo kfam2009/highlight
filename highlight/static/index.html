@@ -148,14 +148,20 @@
       <div class="list" id="runs"></div>
     </div>
     <div class="box">
+      <h3>Fixture <button class="small" id="openFixture">Ver / editar</button></h3>
+      <div class="muted" id="fixtureName"></div>
+    </div>
+    <div class="box">
       <details>
         <summary>Configuración</summary>
         <label for="folders">Carpeta de los partidos: ahí graba el panel y ahí podés poner otros videos (una por línea)</label>
         <textarea id="folders"></textarea>
         <div class="row" style="margin-top:6px"><button class="small" id="addFolder">Agregar carpeta…</button></div>
         <label>Señales SRT (pegá el link de Castr de cada campo)</label>
-        <div class="row" style="gap:6px;margin-bottom:6px"><input id="srtName1" style="width:90px" value="Campo 1"><input id="srtUrl1" style="flex:1" placeholder="srt://…"></div>
+        <div class="row" style="gap:6px"><input id="srtName1" style="width:90px" value="Campo 1"><input id="srtUrl1" style="flex:1" placeholder="srt://…"></div>
+        <select id="srtField1" style="margin:4px 0 10px" title="Cancha del fixture (para el nombre de cada partido)"></select>
         <div class="row" style="gap:6px"><input id="srtName2" style="width:90px" value="Campo 2"><input id="srtUrl2" style="flex:1" placeholder="srt://…"></div>
+        <select id="srtField2" style="margin-top:4px" title="Cancha del fixture (para el nombre de cada partido)"></select>
         <label for="exportDir">Carpeta de exportación (vacío = datos/exportados)</label>
         <div class="row"><input id="exportDir" style="flex:1"><button class="small" id="browseExport">Examinar</button></div>
         <div class="row" style="margin-top:8px"><button class="blue" id="saveCfg" style="flex:1">Guardar</button></div>
@@ -196,6 +202,10 @@ async function loadConfig() {
   $('#liveOn').checked = !!state.config.live_mode;
   const srcs = state.config.srt_sources || [];
   [1, 2].forEach(i => { const x = srcs[i - 1]; $('#srtName' + i).value = x ? x.name : 'Campo ' + i; $('#srtUrl' + i).value = x ? x.url : ''; });
+  await loadFixture();
+  [1, 2].forEach(i => { const x = srcs[i - 1]; const sel = $('#srtField' + i);
+    sel.innerHTML = '<option value="">Cancha del fixture: ninguna</option>' + (state.fixture ? state.fixture.fields.map(f => `<option value="${esc(f)}">Cancha: ${esc(f)}</option>`).join('') : '');
+    sel.value = (x && x.field) || ''; });
   paintAuto();
   pollRec();
   const p = await api('/api/profiles');
@@ -212,7 +222,7 @@ async function saveAuto() {
 }
 async function saveConfig() {
   const folders = $('#folders').value.split('\n').map(s => s.trim()).filter(Boolean);
-  const srt = [1, 2].map(i => ({ name: $('#srtName' + i).value.trim() || 'Campo ' + i, url: $('#srtUrl' + i).value.trim() })).filter(x => x.url);
+  const srt = [1, 2].map(i => ({ name: $('#srtName' + i).value.trim() || 'Campo ' + i, url: $('#srtUrl' + i).value.trim(), field: $('#srtField' + i).value })).filter(x => x.url);
   state.config = await api('/api/config', { video_folders: folders, export_dir: $('#exportDir').value.trim(), default_profile: $('#profile').value, srt_sources: srt });
   pollRec();
   toast('Configuración guardada'); loadVideos();
@@ -246,6 +256,45 @@ async function loadRuns() {
     await api('/api/delete-run', { runId: b.dataset.del });
     if (state.run && state.run.runId === b.dataset.del) { state.run = null; $('#content').innerHTML = '<div class="box empty">Análisis borrado.</div>'; }
     loadRuns(); loadVideos();
+  });
+}
+
+// ------------------------------------------------ fixture
+async function loadFixture() {
+  const r = await api('/api/fixture');
+  state.fixture = r.fixture;
+  $('#fixtureName').textContent = r.fixture ? r.fixture.name : 'Sin fixture cargado';
+}
+async function openFixture() {
+  await loadFixture();
+  const fx = state.fixture;
+  state.run = null; loadRuns();
+  if (!fx) { $('#content').innerHTML = '<div class="box empty">No hay fixture cargado.</div>'; return; }
+  const local = ts => new Date(ts * 1000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const now = Date.now() / 1000;
+  let html = '', day = '';
+  fx.games.forEach(g => {
+    if (g.date !== day) {
+      if (day) html += '</div>';
+      day = g.date;
+      html += `<div style="margin:14px 0 6px;font-weight:700;text-transform:capitalize">${esc(new Date(g.date + 'T12:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }))}</div><div>`;
+    }
+    const live = now >= g.start - 1200 && now <= g.start + 7200;
+    html += `<div class="row" style="gap:8px;margin-bottom:4px;align-items:center;${live ? 'background:rgba(34,197,94,.12);border-radius:6px;padding:2px 4px' : ''}">
+      <span style="width:46px" class="muted">Gm ${g.n}</span>
+      <span style="width:120px">${esc(g.time)} <span class="muted">(${local(g.start)} acá)</span></span>
+      <span style="width:200px" class="muted">${esc(g.field)}</span>
+      <input data-fx="${g.n}" data-side="away" value="${esc(g.away)}" style="flex:1;min-width:0">
+      <span class="muted">vs</span>
+      <input data-fx="${g.n}" data-side="home" value="${esc(g.home)}" style="flex:1;min-width:0"></div>`;
+  });
+  html += '</div>';
+  $('#content').innerHTML = `<div class="box"><h3>Fixture</h3>
+    <div class="muted">${esc(fx.name)}. Horario del lugar y, entre paréntesis, el de esta PC. Cada grabación toma el nombre del partido de su cancha (la cancha de cada señal se elige en Configuración). Los equipos de la super ronda y las finales se completan acá cuando se definen: se guarda solo.</div>
+    ${html}</div>`;
+  $$('[data-fx]', $('#content')).forEach(inp => inp.onchange = async () => {
+    await api('/api/fixture-edit', { n: +inp.dataset.fx, [inp.dataset.side]: inp.value.trim() });
+    toast('Partido ' + inp.dataset.fx + ' actualizado');
   });
 }
 
@@ -710,6 +759,7 @@ $('#refreshVideos').onclick = loadVideos;
 $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
 $('#openMonitor').onclick = openMonitor;
+$('#openFixture').onclick = openFixture;
 $('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
 $('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };

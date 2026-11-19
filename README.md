@@ -86,6 +86,17 @@ Las grabaciones del panel ya son MKV. Un MP4 que todavía se está grabando no
 se puede leer hasta que termina. Para los highlights usá la señal **sin
 relato**.
 
+### Fixture (nombre de cada partido)
+
+El panel trae el fixture del torneo (`highlight/fixtures/`). En
+**Configuración**, debajo del link de cada señal, elegí a qué cancha
+corresponde. Cada grabación toma el nombre del partido que se está jugando o
+está por empezar en esa cancha (por ejemplo `Gm 03 Honduras vs Puerto Rico`).
+**Fixture → Ver / editar** muestra todos los partidos con el horario del lugar
+y el de la PC; los equipos que se definen sobre la marcha (super ronda,
+finales) se escriben ahí y se guardan solos. Sin fixture o fuera de horario, el
+archivo se llama con el nombre del campo y la hora.
+
 ### Grabar las señales SRT
 
 En **Configuración → Señales SRT** pegá el link SRT de Castr de cada campo

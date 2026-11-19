@@ -77,7 +77,7 @@ def _with_timeout(url):
 
 
 class Recorder:
-    def __init__(self, name, url, folder, on_new_file=None, preview=None, pid_dir=None):
+    def __init__(self, name, url, folder, on_new_file=None, preview=None, pid_dir=None, title_fn=None):
         self.name, self.url, self.folder = name, url, Path(folder)
         # pid del ffmpeg: si el panel se cierra de golpe, al volver se cierra el que quedo suelto
         self.pid_file = Path(pid_dir) / f"{_safe(name)}.pid" if pid_dir else None
@@ -102,6 +102,7 @@ class Recorder:
         self._cut = threading.Event()
         self.thread = None
         self.record = False   # False = solo monitor (se ve la senal, no se graba)
+        self.title_fn = title_fn   # nombre del partido segun el fixture (o None)
 
     # ------------------------------------------------------------------
     def start(self):
@@ -218,6 +219,21 @@ class Recorder:
     # ------------------------------------------------------------------
     def _new_path(self):
         self.folder.mkdir(parents=True, exist_ok=True)
+        game = None
+        if self.title_fn:
+            try:
+                game = self.title_fn()
+            except Exception:
+                game = None
+        if game:
+            # "Gm 03 Honduras vs Puerto Rico"; si se corto y volvio: "... parte 2"
+            base = game
+            p = self.folder / f"{base}.mkv"
+            k = 2
+            while p.exists():
+                p = self.folder / f"{base} parte {k}.mkv"
+                k += 1
+            return p
         base = f"{_safe(self.name)} {datetime.now():%Y-%m-%d %H-%M}"
         p = self.folder / f"{base}.mkv"
         k = 2

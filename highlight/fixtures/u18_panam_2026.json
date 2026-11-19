@@ -1,0 +1,579 @@
+{
+ "name": "VI U18 Panam Women's Softball Championship · El Salvador 2026",
+ "utc_offset": -6,
+ "fields": [
+  "Saturnino Bengoa",
+  "Ing Pablo Arnoldo Guzman"
+ ],
+ "note": "Horarios en hora de El Salvador (UTC-6). Super ronda y finales: los equipos se completan a mano en el panel.",
+ "games": [
+  {
+   "n": 1,
+   "date": "2026-11-20",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "Cuba",
+   "home": "El Salvador"
+  },
+  {
+   "n": 2,
+   "date": "2026-11-20",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "Argentina",
+   "home": "Nicaragua"
+  },
+  {
+   "n": 3,
+   "date": "2026-11-21",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "Honduras",
+   "home": "Puerto Rico"
+  },
+  {
+   "n": 4,
+   "date": "2026-11-21",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "Nicaragua",
+   "home": "Honduras"
+  },
+  {
+   "n": 5,
+   "date": "2026-11-21",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "Colombia",
+   "home": "US Virgin Islands"
+  },
+  {
+   "n": 6,
+   "date": "2026-11-21",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "Mexico",
+   "home": "Guatemala"
+  },
+  {
+   "n": 7,
+   "date": "2026-11-21",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "Venezuela",
+   "home": "Argentina"
+  },
+  {
+   "n": 8,
+   "date": "2026-11-21",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "United States",
+   "home": "Brazil"
+  },
+  {
+   "n": 9,
+   "date": "2026-11-21",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "Canada",
+   "home": "Cuba"
+  },
+  {
+   "n": 10,
+   "date": "2026-11-21",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "Peru",
+   "home": "Panama"
+  },
+  {
+   "n": 11,
+   "date": "2026-11-21",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "Bahamas",
+   "home": "El Salvador"
+  },
+  {
+   "n": 12,
+   "date": "2026-11-21",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "21:00",
+   "away": "Bahamas",
+   "home": "Dominican Rep."
+  },
+  {
+   "n": 13,
+   "date": "2026-11-22",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "Peru",
+   "home": "United States"
+  },
+  {
+   "n": 14,
+   "date": "2026-11-22",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "El Salvador",
+   "home": "Canada"
+  },
+  {
+   "n": 15,
+   "date": "2026-11-22",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "Dominican Rep.",
+   "home": "Canada"
+  },
+  {
+   "n": 16,
+   "date": "2026-11-22",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "Cuba",
+   "home": "Bahamas"
+  },
+  {
+   "n": 17,
+   "date": "2026-11-22",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "Panama",
+   "home": "Brazil"
+  },
+  {
+   "n": 18,
+   "date": "2026-11-22",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "Mexico",
+   "home": "Colombia"
+  },
+  {
+   "n": 19,
+   "date": "2026-11-22",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "Argentina",
+   "home": "Honduras"
+  },
+  {
+   "n": 20,
+   "date": "2026-11-22",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "Nicaragua",
+   "home": "Venezuela"
+  },
+  {
+   "n": 21,
+   "date": "2026-11-22",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "Venezuela",
+   "home": "Puerto Rico"
+  },
+  {
+   "n": 22,
+   "date": "2026-11-22",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "21:00",
+   "away": "US Virgin Islands",
+   "home": "Guatemala"
+  },
+  {
+   "n": 23,
+   "date": "2026-11-23",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "Honduras",
+   "home": "Venezuela"
+  },
+  {
+   "n": 24,
+   "date": "2026-11-23",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "US Virgin Islands",
+   "home": "Mexico"
+  },
+  {
+   "n": 25,
+   "date": "2026-11-23",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "Guatemala",
+   "home": "Colombia"
+  },
+  {
+   "n": 26,
+   "date": "2026-11-23",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "Puerto Rico",
+   "home": "Nicaragua"
+  },
+  {
+   "n": 27,
+   "date": "2026-11-23",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "Puerto Rico",
+   "home": "Argentina"
+  },
+  {
+   "n": 28,
+   "date": "2026-11-23",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "Canada",
+   "home": "Bahamas"
+  },
+  {
+   "n": 29,
+   "date": "2026-11-23",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "Brazil",
+   "home": "Peru"
+  },
+  {
+   "n": 30,
+   "date": "2026-11-23",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "United States",
+   "home": "Panama"
+  },
+  {
+   "n": 31,
+   "date": "2026-11-23",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "El Salvador",
+   "home": "Dominican Rep."
+  },
+  {
+   "n": 32,
+   "date": "2026-11-23",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "21:00",
+   "away": "Dominican Rep.",
+   "home": "Cuba"
+  },
+  {
+   "n": 33,
+   "date": "2026-11-24",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "4C",
+   "home": "4D"
+  },
+  {
+   "n": 34,
+   "date": "2026-11-24",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "4A",
+   "home": "4B"
+  },
+  {
+   "n": 35,
+   "date": "2026-11-24",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "2A",
+   "home": "2B"
+  },
+  {
+   "n": 36,
+   "date": "2026-11-24",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "2B",
+   "home": "2C"
+  },
+  {
+   "n": 37,
+   "date": "2026-11-24",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "2C",
+   "home": "2D"
+  },
+  {
+   "n": 38,
+   "date": "2026-11-24",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "3C",
+   "home": "3D"
+  },
+  {
+   "n": 39,
+   "date": "2026-11-24",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "3A",
+   "home": "3B"
+  },
+  {
+   "n": 40,
+   "date": "2026-11-24",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "1A",
+   "home": "1B"
+  },
+  {
+   "n": 41,
+   "date": "2026-11-24",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "1B",
+   "home": "1C"
+  },
+  {
+   "n": 42,
+   "date": "2026-11-24",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "21:00",
+   "away": "1C",
+   "home": "1D"
+  },
+  {
+   "n": 43,
+   "date": "2026-11-25",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "4B",
+   "home": "4D"
+  },
+  {
+   "n": 44,
+   "date": "2026-11-25",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "3B",
+   "home": "3D"
+  },
+  {
+   "n": 45,
+   "date": "2026-11-25",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "2A",
+   "home": "2C"
+  },
+  {
+   "n": 46,
+   "date": "2026-11-25",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "2A",
+   "home": "2D"
+  },
+  {
+   "n": 47,
+   "date": "2026-11-25",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "2B",
+   "home": "2D"
+  },
+  {
+   "n": 48,
+   "date": "2026-11-25",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "4A",
+   "home": "4C"
+  },
+  {
+   "n": 49,
+   "date": "2026-11-25",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "3A",
+   "home": "3C"
+  },
+  {
+   "n": 50,
+   "date": "2026-11-25",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "1A",
+   "home": "1C"
+  },
+  {
+   "n": 51,
+   "date": "2026-11-25",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "1A",
+   "home": "1D"
+  },
+  {
+   "n": 52,
+   "date": "2026-11-25",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "21:00",
+   "away": "1B",
+   "home": "1D"
+  },
+  {
+   "n": 53,
+   "date": "2026-11-26",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "5A",
+   "home": "5B"
+  },
+  {
+   "n": 54,
+   "date": "2026-11-26",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "3B",
+   "home": "3C"
+  },
+  {
+   "n": 55,
+   "date": "2026-11-26",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "2A",
+   "home": "1B"
+  },
+  {
+   "n": 56,
+   "date": "2026-11-26",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "2A",
+   "home": "1C"
+  },
+  {
+   "n": 57,
+   "date": "2026-11-26",
+   "field": "Saturnino Bengoa",
+   "time": "21:00",
+   "away": "2D",
+   "home": "1C"
+  },
+  {
+   "n": 58,
+   "date": "2026-11-26",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "3A",
+   "home": "3D"
+  },
+  {
+   "n": 59,
+   "date": "2026-11-26",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "2B",
+   "home": "1A"
+  },
+  {
+   "n": 60,
+   "date": "2026-11-26",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "2C",
+   "home": "1A"
+  },
+  {
+   "n": 61,
+   "date": "2026-11-26",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "2C",
+   "home": "1D"
+  },
+  {
+   "n": 62,
+   "date": "2026-11-27",
+   "field": "Saturnino Bengoa",
+   "time": "09:00",
+   "away": "4A",
+   "home": "4D"
+  },
+  {
+   "n": 63,
+   "date": "2026-11-27",
+   "field": "Saturnino Bengoa",
+   "time": "12:00",
+   "away": "2D",
+   "home": "1A"
+  },
+  {
+   "n": 64,
+   "date": "2026-11-27",
+   "field": "Saturnino Bengoa",
+   "time": "15:00",
+   "away": "2D",
+   "home": "1B"
+  },
+  {
+   "n": 65,
+   "date": "2026-11-27",
+   "field": "Saturnino Bengoa",
+   "time": "18:00",
+   "away": "2C",
+   "home": "1B"
+  },
+  {
+   "n": 66,
+   "date": "2026-11-27",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "09:00",
+   "away": "4B",
+   "home": "4C"
+  },
+  {
+   "n": 67,
+   "date": "2026-11-27",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "2B",
+   "home": "1C"
+  },
+  {
+   "n": 68,
+   "date": "2026-11-27",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "2B",
+   "home": "1D"
+  },
+  {
+   "n": 69,
+   "date": "2026-11-27",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "18:00",
+   "away": "2A",
+   "home": "1D"
+  },
+  {
+   "n": 70,
+   "date": "2026-11-28",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "12:00",
+   "away": "4th",
+   "home": "3rd"
+  },
+  {
+   "n": 71,
+   "date": "2026-11-28",
+   "field": "Ing Pablo Arnoldo Guzman",
+   "time": "15:00",
+   "away": "2nd",
+   "home": "1st"
+  }
+ ]
+}
