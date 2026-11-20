@@ -169,7 +169,7 @@ class LiveSession:
     # ------------------------------------------------------------------ main
     def _run(self):
         try:
-            if not self._wait_initial(20 * 1024 * 1024 if self.profile_hint else 150 * 1024 * 1024):
+            if not self._wait_initial(2 * 1024 * 1024 if self.profile_hint else 150 * 1024 * 1024):
                 self.status, self.finished = "corto", True
                 self.message = "Grabación muy corta, no se analiza (se puede analizar a mano)"
                 return
