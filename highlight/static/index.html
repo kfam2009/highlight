@@ -330,8 +330,12 @@ function monMeters() {
     const db = 20 * Math.log10(Math.sqrt(sum / a.buf.length) + 1e-6);
     const bar = document.querySelector(`[data-meter="${CSS.escape(name)}"]`);
     if (bar) { const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100)); bar.style.width = pct + '%'; bar.style.background = db > -6 ? '#f87171' : db > -20 ? '#22c55e' : '#3b82f6'; }
-    // no acumular demora
-    const el = a.el; if (el.buffered.length) { const end = el.buffered.end(el.buffered.length - 1); if (end - el.currentTime > 3) el.currentTime = end - 0.5; }
+    // no acumular demora: si se atrasa mucho se reconecta (saltar dentro de un audio en vivo lo corta)
+    const el = a.el, now = performance.now();
+    if (el.buffered.length && now - (a.lastFix || 0) > 15000) {
+      const end = el.buffered.end(el.buffered.length - 1);
+      if (end - el.currentTime > 8) { a.lastFix = now; el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now(); el.play().catch(() => {}); }
+    }
   });
   if ($('#monGrid')) requestAnimationFrame(monMeters);
   else { Object.values(monAudio).forEach(a => { a.el.pause(); a.el.removeAttribute('src'); a.el.load(); }); Object.keys(monAudio).forEach(k => delete monAudio[k]); }
