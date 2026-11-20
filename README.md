@@ -53,6 +53,11 @@ video original ──(1 pasada de ffmpeg)──► scorebug 5 fps · imagen 64x3
            vistas previas 720p ──► panel ──► exportación desde el original
 ```
 
+- **Previa**: antes del primer lanzamiento el panel busca los **himnos**
+  (música sostenida de 1 minuto o más, uno detrás del otro) y arma un clip de
+  10 s de cada uno, más el **saludo** de los equipos que viene después. Van
+  arriba de todo, sugeridos. En un himno, marcar el inicio (tecla **I**) pone
+  el fin 10 s después. Las vistas previas de la previa traen 45 s de margen.
 - **Tipos de jugada**: carrera, hit / avance, doble play, 3er out, out,
   posible ponche (out con 2 strikes y sin movimiento de bases), base por
   bolas. Si una media entrada no tiene nada detectado, aparece igual como

@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 
 from . import events as ev_mod
-from .analyze import PREVIEW_HANDLE, build_clips, half_label, score_text, _np
+from .analyze import PRE_HANDLE, PREVIEW_HANDLE, build_clips, half_label, pregame, score_text, _np
 from .extract import CTX_FPS, CTX_H, CTX_W, AUDIO_RATE, RMS_RATE, find_stingers
 from .ffmpeg import ffmpeg_exe, hms
 from .render import cut, poster, safe_name
@@ -49,6 +49,24 @@ def _frames_from_start(video, seconds=240, every=12, width=960):
     h = int(round(width * h0 / w0 / 2)) * 2
     n = len(data) // (width * h)
     return [np.frombuffer(data[i * width * h:(i + 1) * width * h], np.uint8).reshape(h, width) for i in range(n)]
+
+
+def _frames_at(video, times, width=960):
+    """Fotos sueltas en esos segundos (el MKV que se esta grabando se puede
+    saltar a un punto sin leer todo lo anterior)."""
+    out = []
+    for t in times:
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-ss", f"{t:.1f}", "-i", str(video),
+               "-frames:v", "1", "-vf", f"scale={width}:-2,format=gray", "-f", "image2pipe", "-vcodec", "png", "-"]
+        try:
+            data = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30).stdout
+        except subprocess.TimeoutExpired:
+            continue
+        if data:
+            img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+            if img is not None:
+                out.append(img)
+    return out
 
 
 def _locate_in_frames(frames, profile_names):
@@ -105,6 +123,7 @@ class LiveSession:
         self.work = self.run_dir / "trabajo"
         self.clip_dir = self.run_dir / "clips"
         self.processed_s = 0.0
+        self.pregame = None
         self.raw = None
         self.cache = {}
         self.segments_done = set()
@@ -199,24 +218,28 @@ class LiveSession:
             self.profile_name, self.crop, self.loc_info = self.profile_hint
             self.profile = Profile(self.profile_name)
             return
-        frames = []
-        for _ in range(20):
-            frames = _frames_from_start(self.video)
-            if len(frames) >= 12:
-                break
-            time.sleep(30)
         names = [p["name"] for p in list_profiles()] if self.profile_name in (None, "", "auto") else [self.profile_name]
-        best = _locate_in_frames(frames, names)
-        if not best:
-            # el scorebug puede aparecer recien cuando arranca el juego: reintentar
-            for k in range(40):
-                time.sleep(60)
-                if self.stop_flag:
-                    break
-                frames = _frames_from_start(self.video, seconds=min(3600, 600 + 60 * k), every=30)
-                best = _locate_in_frames(frames, names)
-                if best:
-                    break
+        frames = _frames_from_start(self.video)
+        best = _locate_in_frames(frames, names) if len(frames) >= 6 else None
+        # la grabacion puede arrancar mucho antes del juego (previa, himnos):
+        # se mira cada minuto el ultimo tramo grabado hasta que aparece el scorebug
+        last_size, last_t, rate = self.video.stat().st_size, time.time(), None
+        idle_since = time.time()
+        while not best and not self.stop_flag:
+            time.sleep(60)
+            size, now = self.video.stat().st_size, time.time()
+            if size > last_size:
+                rate = (size - last_size) / (now - last_t)
+                idle_since = now
+            elif now - idle_since > IDLE_END_S:
+                break   # dejo de grabar sin que aparezca el scorebug
+            last_size, last_t = size, now
+            if not rate:
+                continue
+            dur = size / rate
+            self.message = f"Buscando el scorebug (llevo {int(dur // 60)} min de grabación)"
+            times = [max(0.0, dur - 600 + k * 50) for k in range(12)]
+            best = _locate_in_frames(_frames_at(self.video, [t for t in times if t < dur - 3]), names)
         if not best:
             raise RuntimeError("No encuentro el scorebug en los primeros minutos del video")
         _, self.profile_name, self.crop, self.loc_info = best
@@ -296,17 +319,29 @@ class LiveSession:
                                     out_from_count=bool(self.profile.cfg.get("out_from_count")))
         if not final:
             result["final"] = None
+        # previa (himnos y saludo): se busca una sola vez, cuando ya arranco el juego
+        if self.pregame is None:
+            t_first = ev_mod.first_scorebug_time(self.raw["present"], self.profile.fps)
+            if t_first is not None and (final or self.processed_s >= t_first + 30):
+                try:
+                    self.pregame = pregame(self.work, self.raw, self.profile.fps)
+                except Exception:
+                    traceback.print_exc()
+                    self.pregame = []
+        result["pregame"] = self.pregame or []
         clips, halves = build_clips(result)
         limit = float("inf") if final else self.processed_s - PUBLISH_MARGIN
         for c in clips:
             if c["type"] == "revisar" and not final:
                 continue
-            if not final and (c["scorebugTime"] > limit or c["end"] + PREVIEW_HANDLE > self.processed_s):
+            if not final and (c["scorebugTime"] > limit or c["end"] + (PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE) > self.processed_s):
                 continue
             key = f"{c['half']}|{c['type'] if c['type'] in ('final', 'revisar') else round(c['scorebugTime'])}"
+            if c["half"] == "PRE":
+                key = f"PRE|{c['id']}"
             if key in self.ids:
                 continue
-            cid = f"{len(self.ids) + 1:02d}"
+            cid = c["id"] if c["half"] == "PRE" else f"{sum(1 for k in self.ids if not k.startswith('PRE|')) + 1:02d}"
             self.ids[key] = cid
             c["id"] = cid
             self._render(c)
@@ -315,11 +350,12 @@ class LiveSession:
         pend = sum(1 for c in clips if c["type"] != "revisar") - sum(1 for c in self.published.values() if c["type"] != "revisar")
         self.message = (f"En vivo: {hms(self.processed_s, ms=False)} leídos · {len(self.published)} jugadas"
                         + (f" · {pend} por confirmar" if pend > 0 else "")) if not final else \
-            f"{len(self.published)} jugadas en {sum(1 for h in halves if h['key'] != 'FIN')} medias entradas"
+            f"{len(self.published)} jugadas en {sum(1 for h in halves if h['key'] not in ('FIN', 'PRE'))} medias entradas"
 
     def _render(self, c):
-        p0 = max(0.0, c["start"] - PREVIEW_HANDLE)
-        p1 = c["end"] + PREVIEW_HANDLE
+        hd = PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE
+        p0 = max(0.0, c["start"] - hd)
+        p1 = c["end"] + hd
         out = self.clip_dir / f"{c['id']}_{c['half']}_{c['type']}.mp4"
         if cut(self.video, out, p0, p1 - p0, mode="preview"):
             c["file"] = f"clips/{out.name}"
@@ -349,7 +385,7 @@ class LiveSession:
             "runId": self.run_id, "video": str(self.video), "videoName": self.video.name, "profile": self.profile_name,
             "duration": self.processed_s, "created": time.time(), "live": not final,
             "liveStatus": self.message, "scorebugLocation": getattr(self, "loc_info", None),
-            "stats": {"halves": sum(1 for h in hs if h["key"] != "FIN"), "clips": len(clips),
+            "stats": {"halves": sum(1 for h in hs if h["key"] not in ("FIN", "PRE")), "clips": len(clips),
                       "carreras": sum(1 for c in clips if c["type"] == "carrera"),
                       "pitchesMph": len(result["mph"]), "replays": len(result["replays"]),
                       "finalScore": score_text(last)},

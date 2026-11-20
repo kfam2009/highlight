@@ -659,3 +659,97 @@ def detect_game_over(raw, fps, regulation=7, absence_s=180.0, long_absence_s=900
     if gone >= long_absence_s and inn >= 3:
         return {"reason": "pausa larga", **info}
     return None
+
+
+# ---------------------------------------------------------------- previa: himnos y saludo
+
+def first_scorebug_time(present, fps, hold_s=20.0):
+    """Primer momento en que el scorebug queda en pantalla (arranca el juego)."""
+    need = int(hold_s * fps)
+    run = 0
+    for i, p in enumerate(present):
+        run = run + 1 if p else 0
+        if run >= need:
+            return (i - run + 1) / fps
+    return None
+
+
+def tonal_persistence(samples, sr, hop_s=0.125, n_fft=2048):
+    """Cuanto de lo que suena son notas sostenidas (musica: himnos) y no
+    voces o ruido de la cancha. Devuelve (tiempos, valor 0..1)."""
+    a = np.asarray(samples, dtype=np.float32)
+    hop = max(1, int(sr * hop_s))
+    if len(a) < n_fft + hop:
+        return np.zeros(0), np.zeros(0)
+    win = np.hanning(n_fft).astype(np.float32)
+    f = np.fft.rfftfreq(n_fft, 1 / sr)
+    band = (f > 150) & (f < 2500)
+    idx = np.arange(0, len(a) - n_fft, hop)
+    out = np.zeros(len(idx), dtype=np.float32)
+    prev2 = prev1 = None
+    k = np.ones(15, dtype=np.float32) / 15
+    for j, i in enumerate(idx):
+        X = np.log(np.abs(np.fft.rfft(a[i:i + n_fft] * win))[band] + 1e-6)
+        pk = (X - np.convolve(X, k, "same")) > 1.0
+        if prev2 is not None:
+            out[j] = (pk & prev2).sum() / max(1, pk.sum())
+        prev2, prev1 = prev1, pk
+    return idx / sr, out
+
+
+def detect_pregame(samples, sr, t_first, himno_s=10.0, saludo_s=90.0):
+    """Himnos (musica sostenida antes del primer lanzamiento) y el saludo
+    que viene despues. Devuelve una lista de tramos para la Previa."""
+    end = t_first if t_first else len(samples) / sr
+    if end < 60:
+        return []
+    t, p = tonal_persistence(samples[: int(end * sr)], sr)
+    if len(p) < 100:
+        return []
+    fr = 1 / (t[1] - t[0])
+    sm = np.convolve(p, np.ones(int(10 * fr)) / int(10 * fr), "same")
+    thr = max(0.15, 1.8 * float(np.median(sm)))
+    on = sm > thr
+    segs = []
+    i = 0
+    while i < len(on):
+        if on[i]:
+            j = i
+            while j < len(on) and on[j]:
+                j += 1
+            segs.append([t[i], t[j - 1]])
+            i = j
+        else:
+            i += 1
+    merged = []
+    for s in segs:
+        if merged and s[0] - merged[-1][1] <= 8.0:
+            merged[-1][1] = s[1]
+        else:
+            merged.append(s)
+    segs = [s for s in merged if s[1] - s[0] >= 40.0]   # un himno dura 1 minuto o mas
+    anthems = []
+    for a, b in zip(segs, segs[1:]):
+        if b[0] - a[1] <= 90.0:
+            anthems = [a, b]
+            break
+    if not anthems and segs:
+        s = max(segs, key=lambda x: x[1] - x[0])
+        if s[1] - s[0] >= 100.0:   # los dos himnos seguidos, sin pausa
+            mid = (s[0] + s[1]) / 2
+            anthems = [[s[0], mid], [mid, s[1]]]
+        else:
+            anthems = [s]
+    out = []
+    for k, (a, b) in enumerate(anthems, 1):
+        st = min(a + 8.0, max(a, b - himno_s))
+        out.append({"type": "himno", "label": f"Himno {k}" if len(anthems) > 1 else "Himno",
+                    "start": round(st, 2), "end": round(st + himno_s, 2), "music": [round(a, 1), round(b, 1)]})
+    if anthems:
+        s0 = anthems[-1][1] + 3.0
+        s1 = s0 + saludo_s
+        if t_first:
+            s1 = min(s1, t_first - 5.0)
+        if s1 - s0 >= 20.0:
+            out.append({"type": "saludo", "label": "Saludo", "start": round(s0, 2), "end": round(s1, 2)})
+    return out

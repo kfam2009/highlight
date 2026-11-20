@@ -552,7 +552,7 @@ function renderRun() {
   renderHeaderStats();
 }
 function renderCheck() {
-  const r = state.run, hs = r.halves.filter(h => h.key !== 'FIN');
+  const r = state.run, hs = r.halves.filter(h => h.key !== 'FIN' && h.key !== 'PRE');
   if (!hs.length || !hs[0].status) { $('#checkBox').style.display = 'none'; return; }
   const last = hs[hs.length - 1];
   const warn = hs.filter(h => h.status !== 'ok' && !(h === last && h.status === 'sin_cierre'));
@@ -635,7 +635,8 @@ function paintTimeline(el, c) {
 function markPoint(el, which) {
   const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el); if (!v) return;
   const [p0] = previewRange(c), t = +(p0 + v.currentTime).toFixed(2), d = dec(id), [a, b] = inOut(c);
-  if (which === 'in') { d.inTime = t; d.outTime = Math.max(b, t + 1); }
+  if (which === 'in' && c.type === 'himno') { d.inTime = t; d.outTime = +(t + 10).toFixed(2); }   // himno: siempre 10 s
+  else if (which === 'in') { d.inTime = t; d.outTime = Math.max(b, t + 1); }
   else { d.outTime = t; d.inTime = Math.min(a, t - 1); }
   saveDecisions(); updateCard(el);
   toast(which === 'in' ? `Inicio marcado en ${fmt(t)}` : `Fin marcado en ${fmt(t)}`, 1500);

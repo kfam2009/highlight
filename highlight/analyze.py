@@ -14,6 +14,7 @@ from .scorebug import Profile, read_scorebug_video
 
 HALF_NAME = {"T": "alta", "B": "baja"}
 PREVIEW_HANDLE = 15.0  # segundos de mas en la vista previa, antes y despues
+PRE_HANDLE = 45.0      # en la previa (himnos, saludo) mas margen para encontrar el momento
 
 
 def half_label(inning, half):
@@ -34,10 +35,43 @@ def bases_text(b):
     return ", ".join(names) if names else "vacias"
 
 
+PRE_TITLES = {"himno": "Himno", "saludo": "Saludo"}
+
+
+def pregame(work, raw, fps):
+    """Himnos y saludo antes del primer lanzamiento (ver events.detect_pregame)."""
+    from .extract import load_audio_samples
+
+    t_first = ev_mod.first_scorebug_time(raw["present"], fps)
+    if t_first is None:
+        return []
+    samples, sr = load_audio_samples(work, max_s=t_first)
+    if samples is None:
+        return []
+    return ev_mod.detect_pregame(samples, sr, t_first)
+
+
 def build_clips(result):
     clips = []
     halves = []
     n = 0
+    pre = result.get("pregame") or []
+    if pre:
+        ids = []
+        for k, p in enumerate(pre, 1):
+            cid = f"P{k}"
+            detail = "10 s del himno (marcá inicio con I y el fin se pone solo)" if p["type"] == "himno" \
+                else "los equipos se saludan antes del juego"
+            clips.append({
+                "id": cid, "half": "PRE", "halfLabel": "Previa", "type": p["type"], "title": p["label"],
+                "detail": detail, "priority": 90, "suggested": True, "runs": 0, "strikeout": False,
+                "start": p["start"], "end": p["end"], "duration": round(p["end"] - p["start"], 2),
+                "pitchTime": p["start"] + 2.0, "scorebugTime": p["start"], "replay": None, "timing": "previa",
+                "sourceTime": hms(p["start"]), "before": {}, "after": {},
+            })
+            ids.append(cid)
+        halves.append({"key": "PRE", "label": "Previa: himnos y saludo", "inning": None, "half": None,
+                       "start": pre[0]["start"], "end": pre[-1]["end"], "clips": ids})
     for h in result["story"]:
         key = f"{h['inning']}{h['half']}"
         ids = []
@@ -181,6 +215,10 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
                                 replay_from_absence=bool(profile.cfg.get("replay_from_absence")),
                                 out_from_count=bool(profile.cfg.get("out_from_count")))
+    try:
+        result["pregame"] = pregame(work, raw, profile.fps)
+    except Exception:
+        result["pregame"] = []
     clips, halves = build_clips(result)
 
     if render_previews:
@@ -189,8 +227,9 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
             out = clip_dir / f"{c['id']}_{c['half']}_{c['type']}.mp4"
             # la vista previa trae margen de mas a cada lado para poder marcar
             # inicio y fin por fuera del corte sugerido
-            p0 = max(0.0, c["start"] - PREVIEW_HANDLE)
-            p1 = min(duration or c["end"] + PREVIEW_HANDLE, c["end"] + PREVIEW_HANDLE)
+            hd = PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE
+            p0 = max(0.0, c["start"] - hd)
+            p1 = min(duration or c["end"] + hd, c["end"] + hd)
             if cut(video, out, p0, p1 - p0, mode="preview"):
                 c["file"] = f"clips/{out.name}"
                 c["previewStart"], c["previewEnd"] = round(p0, 2), round(p1, 2)
@@ -209,7 +248,7 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         "timings": {"extraer_s": round(t_extract, 1), "total_s": round(time.time() - t0, 1)},
         "scorebugLocation": _read_json(work / "ubicacion_scorebug.json"),
         "stats": {
-            "halves": sum(1 for h in halves if h["key"] != "FIN"),
+            "halves": sum(1 for h in halves if h["key"] not in ("FIN", "PRE")),
             "clips": len(clips),
             "carreras": sum(1 for c in clips if c["type"] == "carrera"),
             "pitchesMph": len(result["mph"]),

@@ -84,3 +84,22 @@ def load_audio_rms(out_dir):
         return None
     a = a[: n * hop].reshape(n, hop)
     return np.sqrt((a ** 2).mean(1))
+
+
+def load_audio_samples(out_dir, max_s=None):
+    """Audio mono 8 kHz como float (-1..1): audio.wav del analisis completo o
+    audio.raw del analisis en vivo. Solo los primeros ``max_s`` segundos."""
+    p = Path(out_dir) / "audio.wav"
+    sr = AUDIO_RATE
+    if p.exists() and p.stat().st_size > 1000:
+        with wave.open(str(p)) as w:
+            sr = w.getframerate()
+            n = w.getnframes() if max_s is None else min(w.getnframes(), int(max_s * sr))
+            a = np.frombuffer(w.readframes(n), dtype=np.int16)
+        return a.astype(np.float32) / 32768.0, sr
+    p = Path(out_dir) / "audio.raw"
+    if p.exists() and p.stat().st_size > 1000:
+        count = -1 if max_s is None else int(max_s * sr)
+        a = np.fromfile(p, dtype=np.int16, count=count)
+        return a.astype(np.float32) / 32768.0, sr
+    return None, sr
