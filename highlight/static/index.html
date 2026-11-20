@@ -306,50 +306,30 @@ function sbText(sc) {
   const half = sc.half === 'T' ? 'alta' : sc.half === 'B' ? 'baja' : '';
   return `${sc.inning ?? '?'}ª ${half} · ${sc.away ?? '?'}-${sc.home ?? '?'} · ${sc.outs ?? '?'} out${sc.count ? ' · ' + sc.count : ''}${sc.onAir ? '' : ' · (sin scorebug en pantalla)'}`;
 }
-// sonido del monitor: un <audio> por campo -> medidor -> volumen (0 = solo medidor)
+// el video y el audio del monitor van por el puerto siguiente al del panel:
+// el navegador abre pocas conexiones por puerto y asi los botones nunca esperan
+const STREAM_BASE = location.protocol + '//' + location.hostname + ':' + ((+location.port || 80) + 1);
+// sonido: se conecta solo el campo que se esta escuchando; el medidor viene del panel
 const monAudio = {};
-let monCtx = null;
-function monAudioFor(name) {
-  if (monAudio[name]) return monAudio[name];
-  if (!monCtx) { try { monCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
-  const el = new Audio(); el.preload = 'none';
-  el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now();
-  const src = monCtx.createMediaElementSource(el);
-  const an = monCtx.createAnalyser(); an.fftSize = 1024;
-  const gain = monCtx.createGain(); gain.gain.value = 0;
-  src.connect(an); an.connect(gain); gain.connect(monCtx.destination);
-  const a = monAudio[name] = { el, an, gain, on: false, buf: new Float32Array(1024) };
-  el.onerror = () => { setTimeout(() => { el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now(); el.play().catch(() => {}); }, 3000); };
+function monListen(name, on) {
+  const cur = monAudio[name];
+  if (cur) { cur.pause(); cur.removeAttribute('src'); cur.load(); delete monAudio[name]; }
+  if (!on) return;
+  const el = new Audio();
+  el.src = STREAM_BASE + '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now();
+  el.onerror = () => { if (monAudio[name] === el) setTimeout(() => monAudio[name] === el && monListen(name, true), 3000); };
+  monAudio[name] = el;
   el.play().catch(() => {});
-  return a;
 }
-function monMeters() {
-  Object.entries(monAudio).forEach(([name, a]) => {
-    a.an.getFloatTimeDomainData(a.buf);
-    let sum = 0; for (const v of a.buf) sum += v * v;
-    const db = 20 * Math.log10(Math.sqrt(sum / a.buf.length) + 1e-6);
-    const bar = document.querySelector(`[data-meter="${CSS.escape(name)}"]`);
-    if (bar) { const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100)); bar.style.width = pct + '%'; bar.style.background = db > -6 ? '#f87171' : db > -20 ? '#22c55e' : '#3b82f6'; }
-    // no acumular demora: si se atrasa mucho se reconecta (saltar dentro de un audio en vivo lo corta)
-    const el = a.el, now = performance.now();
-    if (el.buffered.length && now - (a.lastFix || 0) > 15000) {
-      const end = el.buffered.end(el.buffered.length - 1);
-      if (end - el.currentTime > 8) { a.lastFix = now; el.src = '/api/rec-audio?name=' + encodeURIComponent(name) + '&t=' + Date.now(); el.play().catch(() => {}); }
-    }
-  });
-  if ($('#monGrid')) requestAnimationFrame(monMeters);
-  else { Object.values(monAudio).forEach(a => { a.el.pause(); a.el.removeAttribute('src'); a.el.load(); }); Object.keys(monAudio).forEach(k => delete monAudio[k]); }
-}
+function monStopAll() { Object.keys(monAudio).forEach(k => monListen(k, false)); }
 function openMonitor() {
   state.run = null; loadRuns();
-  if (monCtx && monCtx.state === 'suspended') monCtx.resume();
   $('#content').innerHTML = `<div class="box"><h3>Monitor de señales <span class="muted" style="text-transform:none;letter-spacing:0">video en vivo de lo que se está grabando</span></h3><div id="monGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px"></div></div>`;
   paintMonitor();
-  setTimeout(() => requestAnimationFrame(monMeters), 500);
 }
 async function paintMonitor() {
   clearTimeout(monTimer);
-  const grid = $('#monGrid'); if (!grid) return;
+  const grid = $('#monGrid'); if (!grid) { monStopAll(); return; }
   let r;
   try { r = await api('/api/rec'); } catch (e) { monTimer = setTimeout(paintMonitor, 3000); return; }
   if (!r.sources.length) grid.innerHTML = '<div class="muted">No hay señales configuradas (Configuración → Señales SRT).</div>';
@@ -362,7 +342,7 @@ async function paintMonitor() {
         <div class="m-screen" style="aspect-ratio:16/9;background:#000;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
         <div class="m-audio" style="display:flex;gap:8px;align-items:center;margin-top:8px">
           <button class="small m-listen">🔇 Escuchar</button>
-          <div style="flex:1;height:8px;background:#0b1220;border-radius:4px;overflow:hidden"><div data-meter="${esc(x.name)}" style="height:100%;width:0;transition:width .08s"></div></div>
+          <div style="flex:1;height:8px;background:#0b1220;border-radius:4px;overflow:hidden"><div data-meter="${esc(x.name)}" style="height:100%;width:0;transition:width .4s"></div></div>
           <span class="muted m-noaudio" style="display:none">sin audio</span>
         </div>
         <div class="m-score" style="margin-top:8px;font-size:15px"></div><div class="muted m-file"></div><div class="muted m-cut"></div>
@@ -378,7 +358,7 @@ async function paintMonitor() {
     // el video (MJPEG) se conecta una sola vez; solo se reconecta si se cortó
     if (x.hasPreview && screen.dataset.on !== '1') {
       screen.dataset.on = '1';
-      screen.innerHTML = `<img src="/api/rec-live?name=${encodeURIComponent(x.name)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain">`;
+      screen.innerHTML = `<img src="${STREAM_BASE}/api/rec-live?name=${encodeURIComponent(x.name)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain">`;
       $('img', screen).onerror = () => { screen.dataset.on = ''; };
     } else if (!x.hasPreview) {
       screen.dataset.on = ''; screen.innerHTML = `<span class="muted">${esc(x.message || (x.status === 'detenido' ? 'Detenido' : 'Conectando…'))}</span>`;
@@ -386,17 +366,11 @@ async function paintMonitor() {
     const lb = $('.m-listen', card);
     $('.m-noaudio', card).style.display = (x.hasAudio || !x.hasPreview) ? 'none' : '';
     lb.style.display = x.hasAudio ? '' : 'none';
-    if (x.hasAudio && x.hasPreview) {
-      const a = monAudioFor(x.name);
-      if (a) {
-        lb.textContent = a.on ? '🔊 Escuchando' : '🔇 Escuchar';
-        lb.onclick = () => {
-          if (monCtx.state === 'suspended') monCtx.resume();
-          a.on = !a.on; a.gain.gain.value = a.on ? 1 : 0; a.el.play().catch(() => {});
-          lb.textContent = a.on ? '🔊 Escuchando' : '🔇 Escuchar';
-        };
-      }
-    }
+    lb.textContent = monAudio[x.name] ? '🔊 Escuchando' : '🔇 Escuchar';
+    lb.onclick = () => { monListen(x.name, !monAudio[x.name]); lb.textContent = monAudio[x.name] ? '🔊 Escuchando' : '🔇 Escuchar'; };
+    const bar = $('[data-meter]', card), db = x.level;
+    if (db == null) bar.style.width = '0';
+    else { bar.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%'; bar.style.background = db > -6 ? '#f87171' : db > -20 ? '#22c55e' : '#3b82f6'; }
     $('.m-score', card).textContent = x.status === 'monitor' ? 'Viendo la señal · tocá Grabar cuando empiece el partido' : x.status === 'detenido' ? 'Detenido' : sbText(lv.scoreNow);
     $('.m-file', card).textContent = (x.file ? x.file + ' · ' + (x.sizeMb || 0) + ' MB' : '') + (lv.message ? ' · ' + lv.message : '');
     $('.m-cut', card).textContent = x.lastCut ? 'Último corte: ' + x.lastCut : '';
@@ -407,7 +381,7 @@ async function paintMonitor() {
     sb.onclick = async () => { const r2 = await api('/api/rec-sample', { name: x.name, minutes: 10 }); if (r2.error) toast(r2.error, 6000); else toast('Sacando fotos de los últimos 10 minutos…'); };
     ob.onclick = () => { clearTimeout(monTimer); openRun(lv.runId); };
   });
-  monTimer = setTimeout(paintMonitor, 2000);
+  monTimer = setTimeout(paintMonitor, 1000);
 }
 
 // ------------------------------------------------ grabar SRT

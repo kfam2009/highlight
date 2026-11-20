@@ -89,7 +89,8 @@ class Recorder:
         self.listeners = set()
         self.listeners_lock = threading.Lock()
         self.audio_sock = None
-        self.audio_level = 0.0
+        self.audio_level = -90.0
+        self.level_t = 0.0
         self.on_new_file = on_new_file
         self.proc = None
         self.file = None
@@ -186,6 +187,37 @@ class Recorder:
                 return None
         return self.audio_sock.getsockname()[1]
 
+    def _level_port(self):
+        if getattr(self, "level_sock", None) is None:
+            try:
+                sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sk.bind(("127.0.0.1", 0))
+                self.level_sock = sk
+                threading.Thread(target=self._read_level, daemon=True).start()
+            except OSError:
+                self.level_sock = None
+                return None
+        return self.level_sock.getsockname()[1]
+
+    def _read_level(self):
+        import array
+        import math
+        while True:
+            try:
+                data = self.level_sock.recv(65536)
+            except OSError:
+                time.sleep(1)
+                continue
+            a = array.array("h")
+            a.frombytes(data[: len(data) // 2 * 2])
+            if not len(a):
+                continue
+            rms = math.sqrt(sum(x * x for x in a) / len(a)) / 32768.0
+            db = 20 * math.log10(rms + 1e-6)
+            # sube rapido, baja despacio
+            self.audio_level = db if db > self.audio_level else 0.85 * self.audio_level + 0.15 * db
+            self.level_t = time.time()
+
     def _read_audio(self):
         while True:
             try:
@@ -260,6 +292,11 @@ class Recorder:
                     if port:
                         cmd += ["-map", "0:a:0?", "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k",
                                 "-f", "mp3", f"udp://127.0.0.1:{port}?pkt_size=1316"]
+                    lport = self._level_port()
+                    if lport:
+                        # audio crudo chiquito solo para el medidor de nivel
+                        cmd += ["-map", "0:a:0?", "-ac", "1", "-ar", "8000", "-c:a", "pcm_s16le",
+                                "-f", "s16le", f"udp://127.0.0.1:{lport}?pkt_size=800"]
             if self.status != "sin señal":
                 self.status, self.message = "conectando", "Esperando la señal"
             t0 = time.time()
@@ -337,7 +374,8 @@ class Recorder:
         return {"name": self.name, "url": self.url, "status": self.status, "message": self.message,
                 "file": Path(self.file).name if self.file else None, "sizeMb": size,
                 "since": self.started_file_at if self.file else None,
-                "files": [Path(f).name for f in self.files], "lastCut": self.last_cut, "record": self.record}
+                "files": [Path(f).name for f in self.files], "lastCut": self.last_cut, "record": self.record,
+                "level": round(self.audio_level, 1) if time.time() - self.level_t < 3 else None}
 
 
 def kill_orphans(pid_dir):

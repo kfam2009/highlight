@@ -738,6 +738,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         self.send_response(200)
         self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         q = rec.listen()
@@ -760,6 +761,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=cuadro")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         seq = -1
@@ -831,6 +833,16 @@ def main():
     threading.Thread(target=resume_recordings, daemon=True).start()
     host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
     srv = ThreadingHTTPServer((host, port), Handler)
+    srv.daemon_threads = True
+    # el video y el audio del monitor van por otro puerto: el navegador abre
+    # pocas conexiones por puerto y si las ocupan las transmisiones, los botones
+    # del panel quedan esperando
+    try:
+        srv2 = ThreadingHTTPServer((host, port + 1), Handler)
+        srv2.daemon_threads = True
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+    except OSError:
+        print(f"No pude abrir el puerto {port + 1} para el monitor")
     print(f"Panel de highlights: http://127.0.0.1:{port}")
     srv.serve_forever()
 
