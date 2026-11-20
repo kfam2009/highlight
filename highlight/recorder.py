@@ -21,7 +21,7 @@ from pathlib import Path
 from .ffmpeg import ffmpeg_exe
 
 RETRY_S = 5
-MONITOR_FPS = 25
+MONITOR_FPS = 30   # la senal viene a 60: 30 es justo la mitad y se ve parejo
 MONITOR_W = 640
 SRT_TIMEOUT_US = 15_000_000   # sin datos 15 s = senal caida
 SRT_LATENCY_US = 2_000_000    # 2 s de margen para recuperar paquetes (senal internacional)
