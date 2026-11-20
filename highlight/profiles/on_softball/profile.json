@@ -1,6 +1,6 @@
 {
   "name": "on_softball",
-  "description": "Scorebug abajo a la derecha (carreras a los costados, rombo de bases, entrada, P:xx, conteo y outs). Partido de referencia: 2026-08-15.",
+  "description": "Grafico de ON (carreras a los costados, banderas o logos al centro, rombo de bases con la entrada abajo, conteo y outs abajo, P:xx arriba a la derecha). Calibrado con el partido del 15/08 y ajustado para el Panamericano U18 El Salvador 2026.",
   "sport": "softball",
   "crop": {
     "x": 0.7,
@@ -29,10 +29,10 @@
       155
     ],
     "pnum": [
-      70,
-      170,
-      108,
-      190
+      314,
+      22,
+      350,
+      44
     ],
     "count": [
       104,
@@ -96,6 +96,24 @@
       75,
       345,
       172
+    ],
+    [
+      40,
+      165,
+      100,
+      195
+    ],
+    [
+      100,
+      165,
+      150,
+      195
+    ],
+    [
+      260,
+      165,
+      290,
+      195
     ]
   ]
 }
