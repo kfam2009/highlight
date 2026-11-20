@@ -24,6 +24,7 @@ RETRY_S = 5
 MONITOR_FPS = 25
 MONITOR_W = 640
 SRT_TIMEOUT_US = 15_000_000   # sin datos 15 s = senal caida
+SRT_LATENCY_US = 2_000_000    # 2 s de margen para recuperar paquetes (senal internacional)
 
 
 _SRT_EXE = None
@@ -71,9 +72,19 @@ def _safe(s):
 
 
 def _with_timeout(url):
-    if not url.startswith("srt://") or "timeout=" in url:
+    """Opciones SRT para una senal que viene de lejos por internet: margen
+    de 2 s para recuperar paquetes perdidos (el valor por defecto, 120 ms, es
+    para redes locales y con una senal de otro pais se entrecorta y se cae)."""
+    if not url.startswith("srt://"):
         return url
-    return url + ("&" if "?" in url else "?") + f"timeout={SRT_TIMEOUT_US}"
+    extra = []
+    if "timeout=" not in url:
+        extra.append(f"timeout={SRT_TIMEOUT_US}")
+    if "latency=" not in url:
+        extra.append(f"latency={SRT_LATENCY_US}")
+    if not extra:
+        return url
+    return url + ("&" if "?" in url else "?") + "&".join(extra)
 
 
 class Recorder:
