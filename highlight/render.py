@@ -23,7 +23,8 @@ def cut(video, out_path, start, length, mode="preview"):
     offset = start - pre
     if mode == "export":
         vargs = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
-        aargs = ["-c:a", "aac", "-b:a", "160k"]
+        # audio al nivel normal de una transmision (la senal suele venir baja)
+        aargs = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "160k"]
         timeout = max(120, min(900, int(length * 8)))
     else:
         vargs = ["-vf", "scale=-2:720", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-pix_fmt", "yuv420p"]
@@ -68,3 +69,24 @@ def adjusted_window(clip, decision):
     start = max(0.0, float(clip["start"]) - ext_start + trim_start)
     end = float(clip["end"]) + ext_end - trim_end
     return start, max(1.0, end - start)
+
+
+def audio_gain(video, start, length, target_peak_db=-3.0, max_gain_db=12.0):
+    """Cuanto subir el audio de un tramo para que el pico quede en -3 dB
+    (sin pasarse de +12 dB). Devuelve la ganancia lineal (1.0 = sin cambio)."""
+    import re as _re
+    cmd = [ffmpeg_exe(), "-hide_banner", "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.5, length):.3f}",
+           "-i", str(video), "-vn", "-af", "volumedetect", "-f", "null", "-"]
+    try:
+        err = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="ignore",
+                             timeout=120).stderr
+    except subprocess.TimeoutExpired:
+        return 1.0
+    m = _re.search(r"max_volume:\s*(-?[\d.]+) dB", err)
+    if not m:
+        return 1.0
+    peak = float(m.group(1))
+    if peak <= -80:      # sin audio
+        return 1.0
+    g = max(0.0, min(max_gain_db, target_peak_db - peak))
+    return round(10 ** (g / 20), 3)

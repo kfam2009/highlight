@@ -301,7 +301,10 @@ class Recorder:
                 if not self.no_audio:
                     port = self._audio_port()
                     if port:
-                        cmd += ["-map", "0:a:0?", "-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k",
+                        # para escuchar: volumen nivelado solo (la senal suele venir baja);
+                        # la grabacion guarda el audio original sin tocar
+                        cmd += ["-map", "0:a:0?", "-af", "dynaudnorm=f=250:g=15:m=30", "-ac", "2", "-ar", "44100",
+                                "-c:a", "libmp3lame", "-b:a", "128k",
                                 "-f", "mp3", f"udp://127.0.0.1:{port}?pkt_size=1316"]
                     lport = self._level_port()
                     if lport:

@@ -78,10 +78,16 @@ def build_sequence(name, video, items, info=None):
         if info["channels"] == 2:
             links += f"<link><linkclipref>b{k}</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>{k}</clipindex><groupindex>1</groupindex></link>"
         common = f"<name>{title}</name><enabled>TRUE</enabled><duration>{file_frames}</duration>{rate}<start>{pos}</start><end>{end}</end><in>{cin}</in><out>{cout}</out>"
+        g = float(it.get("gain") or 1.0)
+        level = ("" if abs(g - 1.0) < 0.01 else
+                 "<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid>"
+                 "<effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype>"
+                 f"<parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin>"
+                 f"<valuemax>3.98109</valuemax><value>{g:.4f}</value></parameter></effect></filter>")
         vclips.append(f'<clipitem id="v{k}">{common}{f}{marker}{links}</clipitem>')
-        a1clips.append(f'<clipitem id="a{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>{links}</clipitem>')
+        a1clips.append(f'<clipitem id="a{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>{level}{links}</clipitem>')
         if info["channels"] == 2:
-            a2clips.append(f'<clipitem id="b{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>{links}</clipitem>')
+            a2clips.append(f'<clipitem id="b{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>{level}{links}</clipitem>')
         pos = end
 
     atracks = f"<track>{''.join(a1clips)}</track>" + (f"<track>{''.join(a2clips)}</track>" if a2clips else "")

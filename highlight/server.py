@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .analyze import analyze
-from .render import adjusted_window, cut, safe_name
+from .render import adjusted_window, audio_gain, cut, safe_name
 from .scorebug import list_profiles
 from . import fixture as fixture_mod
 
@@ -573,7 +573,7 @@ def export_sequence(run_id, folder=""):
         if d.get("decision") != "approved":
             continue
         start, length = adjusted_window(c, d)
-        items.append({"start": start, "length": length,
+        items.append({"start": start, "length": length, "gain": audio_gain(video, start, length),
                       "title": f"{c['id']} {c['halfLabel']} - {c['title']}",
                       "marker": " · ".join(x for x in [c["halfLabel"], c["title"], c.get("detail", "")] if x)})
     if not items:
