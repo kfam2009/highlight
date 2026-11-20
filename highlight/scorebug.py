@@ -83,8 +83,10 @@ class GlyphReader:
              estricta; distingue 4TH de 5TH en textos largos).
     """
 
-    def __init__(self, templates, thr_ratio=0.08, glyph_threshold=140, binarize="fixed", match="area", strict_left=0.0):
+    def __init__(self, templates, thr_ratio=0.08, glyph_threshold=140, binarize="fixed", match="area", strict_left=0.0,
+                 shift=2):
         self.labels = [lbl for lbl, _ in templates]
+        self.shift = shift
         # todas las plantillas de un mismo set se llevan al tamano de la primera
         self.shape = templates[0][1].shape if templates else None
         mats = []
@@ -128,6 +130,15 @@ class GlyphReader:
         bink = int(b.sum())
         if self.mat is not None:
             dd = np.abs(self.mat - b).sum(1)
+            if self.shift:
+                # el grafico puede venir corrido 1 o 2 pixeles (otra camara,
+                # otra transmision): se prueba el parche desplazado
+                b2 = b.reshape(self.shape)
+                for dy in range(-self.shift, self.shift + 1):
+                    for dx in range(-self.shift, self.shift + 1):
+                        if dx or dy:
+                            sh = np.roll(np.roll(b2, dy, 0), dx, 1).ravel()
+                            dd = np.minimum(dd, np.abs(self.mat - sh).sum(1))
             thr = self._thr(self.ink, bink, b.size)
             ok = dd < thr
             if ok.any() and self.strict_left:
