@@ -10,6 +10,7 @@ import os
 import queue
 import re
 import shutil
+import subprocess
 import threading
 import time
 import traceback
@@ -265,6 +266,7 @@ def rec_infos():
             info["live"] = ss.info() if ss else None
             info["hasPreview"] = bool(r.preview and r.frame is not None)
             info["hasAudio"] = bool(r.preview and not r.no_audio)
+            info["sample"] = SAMPLES.get(src["name"])
         info = info if info is not None else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
                                    "file": None, "sizeMb": None, "since": None, "files": []}
         out.append(info)
@@ -339,6 +341,39 @@ def fixture_info():
     cfg = load_config()
     fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
     return {"fixture": fx, "file": cfg.get("fixture"), "available": fixture_mod.list_fixtures()}
+
+
+SAMPLES = {}
+
+
+def rec_sample(name, minutes=10, every=5):
+    """Fotos a resolucion completa de los ultimos minutos grabados de una
+    senal, para calibrar un scorebug nuevo. Quedan en <carpeta>/muestras/."""
+    r = RECORDERS.get(name)
+    if not r or not r.file:
+        return {"error": "Tocá Grabar primero: la muestra sale de lo que se está grabando."}
+    if SAMPLES.get(name, {}).get("status") == "sacando":
+        return SAMPLES[name]
+    src = r.file
+    dur = time.time() - (r.started_file_at or time.time())
+    t0 = max(0.0, dur - minutes * 60)
+    out = rec_folder() / "muestras" / f"{safe_name(name)} {time.strftime('%Y-%m-%d %H-%M')}"
+    out.mkdir(parents=True, exist_ok=True)
+    SAMPLES[name] = {"status": "sacando", "folder": str(out)}
+
+    def work():
+        from .ffmpeg import ffmpeg_exe
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t0:.1f}", "-i", src,
+               "-t", f"{dur - t0:.1f}", "-vf", f"fps=1/{every}", "-q:v", "2", str(out / "f_%03d.jpg")]
+        try:
+            subprocess.run(cmd, timeout=1800)
+            n = len(list(out.glob("*.jpg")))
+            SAMPLES[name] = {"status": "listo", "folder": str(out), "fotos": n}
+        except Exception as exc:
+            SAMPLES[name] = {"status": "error", "folder": str(out), "error": str(exc)}
+
+    threading.Thread(target=work, daemon=True).start()
+    return SAMPLES[name]
 
 
 def _rec_state_path():
@@ -670,6 +705,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(start_live(body["path"], body.get("profile") or load_config()["default_profile"]))
             if u.path == "/api/rec":
                 return self.send_json(rec_action(body["name"], body["action"]))
+            if u.path == "/api/rec-sample":
+                return self.send_json(rec_sample(body["name"], int(body.get("minutes") or 10)))
             if u.path == "/api/fixture-edit":
                 fixture_mod.save_edit(fixture_edits_path(), body["n"], body)
                 return self.send_json(fixture_info())

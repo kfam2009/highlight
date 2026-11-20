@@ -362,7 +362,9 @@ async function paintMonitor() {
           <span class="muted m-noaudio" style="display:none">sin audio</span>
         </div>
         <div class="m-score" style="margin-top:8px;font-size:15px"></div><div class="muted m-file"></div><div class="muted m-cut"></div>
-        <div class="row" style="margin-top:6px;gap:6px"><button class="small m-open" style="display:none">Abrir jugadas</button></div>`;
+        <div class="row" style="margin-top:6px;gap:6px"><button class="small m-open" style="display:none">Abrir jugadas</button>
+          <button class="small m-sample" style="display:none" title="Fotos a resolución completa de los últimos 10 minutos, para calibrar un scorebug nuevo">📷 Muestra para calibrar</button>
+          <span class="muted m-sample-st"></span></div>`;
       grid.appendChild(card);
     }
     const lv = x.live || {};
@@ -395,6 +397,10 @@ async function paintMonitor() {
     $('.m-file', card).textContent = (x.file ? x.file + ' · ' + (x.sizeMb || 0) + ' MB' : '') + (lv.message ? ' · ' + lv.message : '');
     $('.m-cut', card).textContent = x.lastCut ? 'Último corte: ' + x.lastCut : '';
     const ob = $('.m-open', card); ob.style.display = lv.runId ? '' : 'none';
+    const sb = $('.m-sample', card); sb.style.display = rec ? '' : 'none';
+    const ss = x.sample;
+    $('.m-sample-st', card).textContent = !ss ? '' : ss.status === 'sacando' ? 'sacando fotos…' : ss.status === 'listo' ? `${ss.fotos} fotos en ${ss.folder}` : ('error: ' + (ss.error || ''));
+    sb.onclick = async () => { const r2 = await api('/api/rec-sample', { name: x.name, minutes: 10 }); if (r2.error) toast(r2.error, 6000); else toast('Sacando fotos de los últimos 10 minutos…'); };
     ob.onclick = () => { clearTimeout(monTimer); openRun(lv.runId); };
   });
   monTimer = setTimeout(paintMonitor, 2000);
