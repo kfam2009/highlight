@@ -51,6 +51,81 @@ def pregame(work, raw, fps):
     return ev_mod.detect_pregame(samples, sr, t_first)
 
 
+def find_final_graphic(video, t0, t1, crop=None, W=320, H=180):
+    """Busca el grafico del resultado final (la tabla con las entradas) despues
+    del ultimo lanzamiento: un recuadro grande y quieto en la mitad de abajo de
+    la pantalla mientras la imagen de fondo se mueve (festejos, saludos).
+    Sirve para cualquier diseno de grafico. Devuelve (inicio, fin) o None."""
+    import subprocess
+
+    import cv2
+
+    from .ffmpeg import ffmpeg_exe
+
+    if t1 - t0 < 10:
+        return None
+    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-ss", f"{max(0.0, t0):.2f}", "-i", str(video),
+           "-t", f"{t1 - t0:.2f}", "-vf", f"fps=1,scale={W}:{H},format=gray", "-f", "rawvideo", "-"]
+    try:
+        data = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=600).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    n = len(data) // (W * H)
+    if n < 10:
+        return None
+    v = np.frombuffer(data[: n * W * H], np.uint8).reshape(n, H, W).astype(np.float32)
+    keep = np.ones((H, W), bool)
+    keep[: int(0.45 * H)] = False          # la tabla va en la mitad de abajo
+    keep[int(0.97 * H):] = False
+    if crop:                                # el scorebug no cuenta
+        x0, y0 = int(crop["x"] * W) - 4, int(crop["y"] * H) - 4
+        keep[max(0, y0): int((crop["y"] + crop["h"]) * H) + 4, max(0, x0): int((crop["x"] + crop["w"]) * W) + 4] = False
+    hits = []
+    for i in range(2, n - 2):
+        win = v[i - 2:i + 3]
+        sd = win.std(0)
+        mean = win.mean(0)
+        ed = np.abs(cv2.Sobel(mean, cv2.CV_32F, 1, 0)) + np.abs(cv2.Sobel(mean, cv2.CV_32F, 0, 1))
+        stat = (sd < 5) & (ed > 40) & keep
+        dyn = float(np.median(sd[~stat]))
+        m = cv2.morphologyEx(stat.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 15), np.uint8))
+        k, _, st, _ = cv2.connectedComponentsWithStats(m)
+        ok = False
+        if k > 1:
+            j = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+            w, h, a = st[j, 2] / W, st[j, 3] / H, st[j, 4] / (W * H)
+            ok = w >= 0.35 and h >= 0.04 and a >= 0.06 and dyn > 4
+        hits.append(ok)
+    # el primero que se queda en pantalla 8 s o mas
+    run = 0
+    for i, ok in enumerate(hits):
+        run = run + 1 if ok else 0
+        if run >= 8:
+            a = i - run + 1
+            b = i
+            while b + 1 < len(hits) and hits[b + 1]:
+                b += 1
+            return t0 + a + 2, t0 + b + 2
+    return None
+
+
+def refine_final(video, fin, crop=None, total_s=120.0):
+    """El Final tiene que traer el grafico del resultado (resumen de las
+    entradas) y los jugadores saludandose: ~2 minutos que terminan despues del
+    grafico."""
+    if not fin:
+        return fin
+    g = find_final_graphic(video, fin["pitchTime"] + 10, min(fin["pitchTime"] + 330, fin.get("videoEnd") or 1e9), crop)
+    if not g:
+        return fin
+    fin = dict(fin)
+    end = max(g[1] + 8.0, fin["start"] + total_s)
+    end = min(end, fin["start"] + 240.0, fin.get("videoEnd") or end)
+    fin["end"] = round(end, 2)
+    fin["graphic"] = [round(g[0], 1), round(g[1], 1)]
+    return fin
+
+
 def build_clips(result):
     clips = []
     halves = []
@@ -141,6 +216,7 @@ def build_clips(result):
             "id": cid, "half": "FIN", "halfLabel": "Final", "type": "final",
             "title": f"Final {sc}" if sc else "Final",
             "detail": "última jugada, festejos, saludos y score final"
+                      + (" · con el gráfico del resultado" if fin.get("graphic") else " · no encontré el gráfico del resultado, revisá el fin")
                       + (" · ojo: la grabación parece cortarse antes del final" if fin.get("recordingCut") else ""),
             "priority": fin["priority"], "suggested": True, "runs": 0,
             "start": fin["start"], "end": fin["end"], "duration": round(fin["end"] - fin["start"], 2),
@@ -182,6 +258,7 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     clip_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
+    crop = None
     if reuse_work:
         # re-analizar sin volver a leer el video (por ejemplo con una version
         # nueva de la logica): se reutiliza lo extraido antes
@@ -215,6 +292,10 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
                                 replay_from_absence=bool(profile.cfg.get("replay_from_absence")),
                                 out_from_count=bool(profile.cfg.get("out_from_count")))
+    try:
+        result["final"] = refine_final(video, result.get("final"), crop or profile.crop)
+    except Exception:
+        pass
     try:
         result["pregame"] = pregame(work, raw, profile.fps)
     except Exception:

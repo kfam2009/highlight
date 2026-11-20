@@ -58,6 +58,11 @@ video original ──(1 pasada de ffmpeg)──► scorebug 5 fps · imagen 64x3
   10 s de cada uno, más el **saludo** de los equipos que viene después. Van
   arriba de todo, sugeridos. En un himno, marcar el inicio (tecla **I**) pone
   el fin 10 s después. Las vistas previas de la previa traen 45 s de margen.
+- **Final**: último lanzamiento, festejos, saludo de los jugadores y el
+  **gráfico del resultado** (la tabla con las entradas). El panel busca ese
+  gráfico (un recuadro grande que queda quieto en la mitad de abajo mientras
+  la imagen se mueve) y arma unos 2 minutos que terminan después de él. Si no
+  lo encuentra, lo avisa en el clip.
 - **Tipos de jugada**: carrera, hit / avance, doble play, 3er out, out,
   posible ponche (out con 2 strikes y sin movimiento de bases), base por
   bolas. Si una media entrada no tiene nada detectado, aparece igual como

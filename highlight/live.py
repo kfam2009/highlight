@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 
 from . import events as ev_mod
-from .analyze import PRE_HANDLE, PREVIEW_HANDLE, build_clips, half_label, pregame, score_text, _np
+from .analyze import PRE_HANDLE, PREVIEW_HANDLE, build_clips, half_label, pregame, refine_final, score_text, _np
 from .extract import CTX_FPS, CTX_H, CTX_W, AUDIO_RATE, RMS_RATE, find_stingers
 from .ffmpeg import ffmpeg_exe, hms
 from .render import cut, poster, safe_name
@@ -319,6 +319,11 @@ class LiveSession:
                                     out_from_count=bool(self.profile.cfg.get("out_from_count")))
         if not final:
             result["final"] = None
+        else:
+            try:
+                result["final"] = refine_final(self.video, result.get("final"), self.crop or self.profile.crop)
+            except Exception:
+                traceback.print_exc()
         # previa (himnos y saludo): se busca una sola vez, cuando ya arranco el juego
         if self.pregame is None:
             t_first = ev_mod.first_scorebug_time(self.raw["present"], self.profile.fps)
