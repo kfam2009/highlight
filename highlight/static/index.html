@@ -266,6 +266,7 @@ async function loadFixture() {
   $('#fixtureName').textContent = r.fixture ? r.fixture.name : 'Sin fixture cargado';
 }
 async function openFixture() {
+  leaveMonitor();
   await loadFixture();
   const fx = state.fixture;
   state.run = null; loadRuns();
@@ -322,7 +323,16 @@ function monListen(name, on) {
   el.play().catch(() => {});
 }
 function monStopAll() { Object.keys(monAudio).forEach(k => monListen(k, false)); }
+// Chrome no corta la transmision de una imagen MJPEG cuando se saca de la
+// pagina: hay que vaciarle el src, si no las conexiones quedan ocupadas y al
+// volver al monitor la imagen no aparece
+function leaveMonitor() {
+  document.querySelectorAll('#monGrid img').forEach(i => { i.src = 'data:,'; });
+  monStopAll();
+  clearTimeout(monTimer);
+}
 function openMonitor() {
+  leaveMonitor();
   state.run = null; loadRuns();
   $('#content').innerHTML = `<div class="box"><h3>Monitor de señales <span class="muted" style="text-transform:none;letter-spacing:0">video en vivo de lo que se está grabando</span></h3><div id="monGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px"></div></div>`;
   paintMonitor();
@@ -465,6 +475,7 @@ async function liveRefresh() {
   liveTimer = setTimeout(liveRefresh, 20000);
 }
 async function openRun(id) {
+  leaveMonitor();
   let run;
   try { run = await api('/api/run?id=' + encodeURIComponent(id)); }
   catch (err) { return toast('No se pudo abrir el análisis: ' + err.message, 8000); }
@@ -649,6 +660,7 @@ async function extendPreview(el, secs) {
   } catch (err) { toast(err.message, 6000); }
   btns.forEach(x => x.disabled = false);
 }
+function setDecision(id, v) { const d = dec(id); d.decision = d.decision === v ? undefined : v; saveDecisions(); const el = $(`.card[data-id="${id}"]`); if (el) updateCard(el); }
 function bindCard(el) {
   const id = el.dataset.id, c = state.run.clips.find(x => x.id === id), v = $('video', el);
   $$('[data-act]', el).forEach(b => b.onclick = () => setDecision(id, b.dataset.act));
