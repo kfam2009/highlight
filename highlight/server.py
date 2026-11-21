@@ -852,14 +852,57 @@ class Handler(BaseHTTPRequestHandler):
         print(fmt % args)
 
 
+class _Tee:
+    """Lo que el panel escribe en la ventana negra tambien va a datos/panel.log
+    (para saber por que se cerro, si pasa)."""
+    def __init__(self, *streams):
+        self.streams = [x for x in streams if x]
+
+    def write(self, data):
+        for st in self.streams:
+            try:
+                st.write(data)
+                st.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        for st in self.streams:
+            try:
+                st.flush()
+            except Exception:
+                pass
+
+
+def _setup_log():
+    import faulthandler
+    import sys
+    try:
+        d = Path(load_config()["data_dir"])
+        d.mkdir(parents=True, exist_ok=True)
+        log = open(d / "panel.log", "a", encoding="utf-8", buffering=1)
+        log.write(f"\n===== panel abierto {time.strftime('%Y-%m-%d %H:%M:%S')} =====\n")
+        sys.stdout = _Tee(sys.__stdout__, log)
+        sys.stderr = _Tee(sys.__stderr__, log)
+        faulthandler.enable(log)
+    except Exception:
+        pass
+
+
 def main():
+    import sys
+    _setup_log()
     port = int(os.environ.get("HIGHLIGHT_PORT", "8790"))
+    host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
+    try:
+        srv = ThreadingHTTPServer((host, port), Handler)
+    except OSError:
+        print(f"El panel ya esta abierto (puerto {port} ocupado).")
+        sys.exit(3)
+    srv.daemon_threads = True
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=resume_recordings, daemon=True).start()
-    host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
-    srv = ThreadingHTTPServer((host, port), Handler)
-    srv.daemon_threads = True
     # el video y el audio del monitor van por otro puerto: el navegador abre
     # pocas conexiones por puerto y si las ocupan las transmisiones, los botones
     # del panel quedan esperando

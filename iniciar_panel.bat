@@ -44,7 +44,7 @@ if errorlevel 1 (
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel%==0 goto open_panel
 
-start "Highlights (no cerrar)" /min "%VPY%" -m highlight.server
+start "Highlights (no cerrar)" /min cmd /c ""%~dp0correr_servidor.bat""
 timeout /t 3 /nobreak > nul
 
 :open_panel
