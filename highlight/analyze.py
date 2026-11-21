@@ -41,6 +41,12 @@ PRE_TITLES = {"himno": "Himno", "saludo": "Saludo"}
 def pregame(work, raw, fps):
     """Himnos y saludo antes del primer lanzamiento (ver events.detect_pregame)."""
     from .extract import load_audio_samples
+    try:
+        from .server import load_config
+        if not load_config().get("previa", True):
+            return []
+    except Exception:
+        pass
 
     t_first = ev_mod.first_scorebug_time(raw["present"], fps)
     if t_first is None:

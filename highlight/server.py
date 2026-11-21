@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
     "srt_sources": [],
     "auto_cut": True,                # cortar solo el archivo cuando termina cada partido
+    "previa": True,                  # buscar himnos y saludo antes del primer lanzamiento
     "fixture": "u18_panam_2026.json",  # nombres de los partidos (highlight/fixtures/)
 }
 
@@ -751,7 +752,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut", "fixture"):
+                          "srt_sources", "auto_cut", "fixture", "previa"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
