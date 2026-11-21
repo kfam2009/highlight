@@ -304,7 +304,33 @@ def rec_action(name, action):
                     if ss and ss.profile is not None:
                         hint = (ss.profile_name, ss.crop, ss.loc_info)
                         break
-                start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
+                hint_file = Path(load_config()["data_dir"]) / "grabando" / f"{safe_name(name)}.scorebug.json"
+                if hint is None and hint_file.exists():
+                    # el panel se reinicio: el scorebug de este campo esta donde estaba
+                    try:
+                        hd = json.loads(hint_file.read_text(encoding="utf-8"))
+                        if time.time() - hd.get("t", 0) < 12 * 3600:
+                            hint = (hd["profile"], hd.get("crop"), hd.get("info") or {})
+                    except Exception:
+                        hint = None
+                ss_new = start_live(path, load_config().get("default_profile") or "auto", on_game_over=game_over, hint=hint)
+
+                def remember():
+                    # guardar donde esta el scorebug de este campo apenas se encuentre
+                    s3 = LIVE.get(str(Path(path).resolve()))
+                    for _ in range(3600):
+                        if not s3 or s3.finished or s3.status == "error":
+                            return
+                        if s3.profile is not None:
+                            try:
+                                hint_file.parent.mkdir(parents=True, exist_ok=True)
+                                hint_file.write_text(json.dumps({"profile": s3.profile_name, "crop": s3.crop,
+                                                                 "info": s3.loc_info, "t": time.time()}), encoding="utf-8")
+                            except Exception:
+                                pass
+                            return
+                        time.sleep(5)
+                threading.Thread(target=remember, daemon=True).start()
             def game_title():
                 cfg = load_config()
                 s2 = next((x for x in cfg.get("srt_sources", []) if x["name"] == name), {})

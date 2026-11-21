@@ -331,6 +331,12 @@ class Recorder:
                 return
             announced = False
             while self.proc.poll() is None:
+                if self.record != recording:
+                    # pidieron grabar (o dejar de grabar) justo mientras arrancaba
+                    # la conexion: se reconecta en el modo correcto
+                    self._cut.set()
+                    self._kill()
+                    break
                 if not recording:
                     if self.frame is not None and self.status != "monitor":
                         self.status, self.message = "monitor", "Viendo la señal (sin grabar)"
