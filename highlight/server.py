@@ -391,6 +391,9 @@ def rec_action(name, action, adopt_state=None):
         threading.Thread(target=r.stop, daemon=True).start()
         _remember_recording(name, False)
     elif r and action == "cut":
+        # Cortar juego a mano = termino el partido: el archivo que sigue toma el
+        # nombre del proximo partido del fixture
+        _game_state(name, over=True)
         threading.Thread(target=r.cut, daemon=True).start()
     return rec_infos()
 
