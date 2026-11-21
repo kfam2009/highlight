@@ -146,7 +146,6 @@ def game_end_index(st, fps=5, recover_s=120.0):
                 return True
         return False
 
-    best = {"away": 0, "home": 0}
     last_pos = (0, 0)
     for i in range(n):
         pos = pos_at(i)
@@ -157,15 +156,8 @@ def game_end_index(st, fps=5, recover_s=120.0):
                     return i
             else:
                 last_pos = max(last_pos, pos)
-        for k in ("away", "home"):
-            v = _num(st[k][i])
-            if v is not None:
-                if v < best[k]:
-                    b = best[k]
-                    if not recovers(i, lambda j: (_num(st[k][j]) or -1) >= b):
-                        return i
-                    continue
-                best[k] = max(best[k], v)
+        # las carreras que bajan sin que baje la entrada son correcciones del
+        # operador (puso una carrera de mas y la saco): no es el final
     return None
 
 
