@@ -925,13 +925,26 @@ def _setup_log():
         pass
 
 
+class ExclusiveServer(ThreadingHTTPServer):
+    """En Windows, con SO_REUSEADDR dos paneles pueden abrir el mismo puerto a
+    la vez y grabar dos veces. Se pide el puerto en exclusiva."""
+    allow_reuse_address = os.name != "nt"
+    allow_reuse_port = False
+
+    def server_bind(self):
+        import socket
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main():
     import sys
     _setup_log()
     port = int(os.environ.get("HIGHLIGHT_PORT", "8790"))
     host = os.environ.get("HIGHLIGHT_HOST", "127.0.0.1")
     try:
-        srv = ThreadingHTTPServer((host, port), Handler)
+        srv = ExclusiveServer((host, port), Handler)
     except OSError:
         print(f"El panel ya esta abierto (puerto {port} ocupado).")
         sys.exit(3)
@@ -943,7 +956,7 @@ def main():
     # pocas conexiones por puerto y si las ocupan las transmisiones, los botones
     # del panel quedan esperando
     try:
-        srv2 = ThreadingHTTPServer((host, port + 1), Handler)
+        srv2 = ExclusiveServer((host, port + 1), Handler)
         srv2.daemon_threads = True
         threading.Thread(target=srv2.serve_forever, daemon=True).start()
     except OSError:

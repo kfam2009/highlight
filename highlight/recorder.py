@@ -417,6 +417,17 @@ def kill_orphans(pid_dir):
             f.unlink()
         except OSError:
             pass
+    # ffmpeg de grabacion SRT que quedaron sin archivo .pid (por ejemplo si
+    # hubo dos paneles abiertos a la vez): se cierran todos
+    if os.name == "nt":
+        try:
+            cmd = ("Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | "
+                   "Where-Object { $_.CommandLine -like '*srt://*' } | "
+                   "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+            subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
+                           capture_output=True, timeout=30)
+        except Exception:
+            pass
 
 
 def _is_ffmpeg(pid):
