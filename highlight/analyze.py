@@ -100,7 +100,9 @@ def find_final_graphic(video, t0, t1, crop=None, W=320, H=180):
         if k > 1:
             j = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
             w, h, a = st[j, 2] / W, st[j, 3] / H, st[j, 4] / (W * H)
-            ok = w >= 0.28 and h >= 0.04 and a >= 0.035 and dyn > 4
+            # una tabla: ancha y baja. El fondo puede estar quieto (plano
+            # general del estadio vacio) o moverse (festejos, saludos)
+            ok = w >= 0.28 and h >= 0.04 and a >= 0.035 and w / max(h, 1e-3) >= 2.5 and (dyn > 4 or a < 0.2)
         hits.append(ok)
     # recuadros que se quedan en pantalla 8 s o mas; antes de la tabla del
     # resultado suele aparecer otro (jugadora del partido, resumen): se usa el

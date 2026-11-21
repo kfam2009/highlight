@@ -491,9 +491,16 @@ def final_segment(events, present, fps, mph=None, game_over_s=60.0):
         else:
             run = 0
     if t_gone is not None:
-        m = _last_in(mph or [], t_gone - 20.0, t_gone)
-        pitch = (m - 2.0) if m is not None else t_gone - 8.0
-        pitch = max(pitch, last["pitchTime"])
+        if t_gone - last["pitchTime"] <= 150.0:
+            # la ultima jugada del scorebug es la que termina el partido: el
+            # operador suele actualizar tarde (despues de los festejos), asi que
+            # no se toma el momento en que se va el grafico
+            pitch = last["pitchTime"]
+        else:
+            # la ultima jugada no llego al scorebug (el 3er out que no se marco)
+            m = _last_in(mph or [], t_gone - 20.0, t_gone)
+            pitch = (m - 2.0) if m is not None else t_gone - 8.0
+            pitch = max(pitch, last["pitchTime"])
         start = max(0.0, pitch - 5.0)
         end = min(t_gone + 120.0, vid_end)
         cut = False
