@@ -169,7 +169,8 @@ class LiveSession:
     # ------------------------------------------------------------------ main
     def _run(self):
         try:
-            if not self._wait_initial(2 * 1024 * 1024 if self.profile_hint else 150 * 1024 * 1024):
+            if not self._wait_initial(2 * 1024 * 1024 if (self.profile_hint or self.profile_name not in (None, "", "auto"))
+                                      else 150 * 1024 * 1024):
                 self.status, self.finished = "corto", True
                 self.message = "Grabación muy corta, no se analiza (se puede analizar a mano)"
                 return
@@ -218,7 +219,14 @@ class LiveSession:
             self.profile_name, self.crop, self.loc_info = self.profile_hint
             self.profile = Profile(self.profile_name)
             return
-        names = [p["name"] for p in list_profiles()] if self.profile_name in (None, "", "auto") else [self.profile_name]
+        if self.profile_name not in (None, "", "auto"):
+            # perfil elegido en la configuracion: el scorebug esta donde dice el
+            # perfil; se arranca enseguida sin buscarlo (buscar en un archivo que
+            # se esta grabando es lento)
+            self.profile = Profile(self.profile_name)
+            self.crop, self.loc_info = None, {"status": "posicion del perfil"}
+            return
+        names = [p["name"] for p in list_profiles()]
         frames = _frames_from_start(self.video)
         best = _locate_in_frames(frames, names) if len(frames) >= 6 else None
         # la grabacion puede arrancar mucho antes del juego (previa, himnos):
