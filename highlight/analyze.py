@@ -234,6 +234,28 @@ def build_clips(result):
     return clips, halves
 
 
+def read_scorebug_segments(work, profile, on_progress=None):
+    """Lee los tramos scorebug_NNNN.mp4 de un analisis en vivo y los une."""
+    import csv
+    rows = [r for r in csv.reader(open(Path(work) / "scorebug_lista.csv", newline="")) if r]
+    raw = None
+    for k, row in enumerate(rows):
+        seg = read_scorebug_video(Path(work) / row[0], profile)
+        if raw is None:
+            raw = {key: [] for key in seg if isinstance(seg[key], list)}
+            raw["fps"] = seg["fps"]
+        n = int(round((float(row[2]) - float(row[1])) * profile.fps)) if len(row) >= 3 else seg["frames"]
+        for key, v in seg.items():
+            if isinstance(v, list) and key in raw:
+                raw[key].extend(v[:n] + [v[-1] if v else None] * max(0, n - len(v)) if n else v)
+        if on_progress:
+            on_progress((k + 1) / len(rows))
+    if raw is None:
+        raw = read_scorebug_video(Path(work) / "scorebug.mp4", profile)
+    raw["frames"] = len(raw.get("present", []))
+    return raw
+
+
 def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, render_previews=True, reuse_work=None):
     video = Path(video).resolve()
     if not video.exists():
@@ -287,7 +309,11 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
         (work / "ubicacion_scorebug.json").write_text(json.dumps(loc_info), encoding="utf-8")
 
     prog("scorebug", 0.6, "Leyendo el scorebug")
-    raw = read_scorebug_video(work / "scorebug.mp4", profile, lambda f: prog("scorebug", 0.6 + f * 0.15))
+    if not (work / "scorebug.mp4").exists() and (work / "scorebug_lista.csv").exists():
+        # trabajo de un analisis en vivo: el scorebug esta en tramos de 1 minuto
+        raw = read_scorebug_segments(work, profile, lambda f: prog("scorebug", 0.6 + f * 0.15))
+    else:
+        raw = read_scorebug_video(work / "scorebug.mp4", profile, lambda f: prog("scorebug", 0.6 + f * 0.15))
     with open(work / "scorebug_raw.pkl", "wb") as fh:
         pickle.dump(raw, fh)
 
@@ -295,6 +321,9 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     ctx = load_context(work)
     stingers = find_stingers(ctx, profile.stinger)
     rms = load_audio_rms(work)
+    if rms is None and (work / "audio.raw").exists():
+        from .live import load_audio_rms_raw
+        rms = load_audio_rms_raw(work / "audio.raw")
     result = ev_mod.build_story(raw, stingers, rms, RMS_RATE,
                                 replay_from_absence=bool(profile.cfg.get("replay_from_absence")),
                                 out_from_count=bool(profile.cfg.get("out_from_count")))
