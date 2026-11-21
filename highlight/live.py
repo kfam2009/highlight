@@ -178,7 +178,15 @@ class LiveSession:
             self._start_ffmpeg()
             while True:
                 done = self.proc.poll() is not None
-                self._cycle(final=False)
+                try:
+                    self._cycle(final=False)
+                except Exception:
+                    # un error de un ciclo (archivo tomado, disco ocupado...) no
+                    # corta el analisis: se reintenta en el proximo
+                    traceback.print_exc()
+                    self.errors = getattr(self, "errors", 0) + 1
+                    if self.errors > 20:
+                        raise
                 if done or self.stop_flag:
                     break
                 time.sleep(30)
@@ -407,4 +415,14 @@ class LiveSession:
         }
         tmp = self.run_dir / "manifest.json.tmp"
         tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, default=_np), encoding="utf-8")
-        tmp.replace(self.run_dir / "manifest.json")
+        # en Windows el reemplazo falla si en ese instante el panel (o el
+        # antivirus) esta leyendo el archivo: se reintenta; si igual no se
+        # puede, se escribe en el proximo ciclo (nunca se corta el analisis)
+        for k in range(20):
+            try:
+                tmp.replace(self.run_dir / "manifest.json")
+                break
+            except PermissionError:
+                time.sleep(0.25)
+        else:
+            print(f"No pude escribir {self.run_dir / 'manifest.json'} (lo reintento en el próximo ciclo)")
