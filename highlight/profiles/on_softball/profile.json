@@ -17,16 +17,16 @@
   "glyph_threshold": 140,
   "regions": {
     "away": [
-      25,
-      90,
+      0,
       80,
-      155
+      100,
+      165
     ],
     "home": [
-      345,
-      90,
-      400,
-      155
+      325,
+      80,
+      425,
+      165
     ],
     "pnum": [
       314,
@@ -54,8 +54,8 @@
     ]
   },
   "glyph_fields": {
-    "away": "score",
-    "home": "score",
+    "away": "digits",
+    "home": "digits",
     "count": "count",
     "outs": "outs",
     "inning": {
@@ -116,5 +116,19 @@
       195
     ]
   ],
-  "replay_from_absence": true
+  "replay_from_absence": true,
+  "presence_exclude": [
+    [
+      0,
+      75,
+      100,
+      170
+    ],
+    [
+      330,
+      75,
+      420,
+      170
+    ]
+  ]
 }

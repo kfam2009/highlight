@@ -49,6 +49,11 @@ class Profile:
         # para saber si el scorebug esta en pantalla
         for x0, y0, x1, y1 in self.cfg.get("locate_exclude", []):
             self.mask[y0:y1, x0:x1] = False
+        # para saber si el scorebug esta en pantalla no sirven las cajas de las
+        # carreras: con dos cifras (10, 12...) la caja se ensancha
+        self.pmask = self.mask.copy()
+        for x0, y0, x1, y1 in self.cfg.get("presence_exclude", []):
+            self.pmask[y0:y1, x0:x1] = False
         self.templates = {}
         for key in t.files:
             if "|" not in key:
@@ -173,6 +178,39 @@ def _glyph_specs(cfg):
     return specs
 
 
+class DigitReader:
+    """Numeros de una o mas cifras (carreras 10, 12...): se separa cada cifra
+    por manchas de tinta y se compara con la plantilla de cada digito."""
+
+    def __init__(self, templates, glyph_threshold=140, min_h=35, max_h=60, max_err=90):
+        self.labels = [lbl for lbl, _ in templates]
+        self.mat = np.array([(v > 127).ravel() for _, v in templates]) if templates else None
+        self.gt = glyph_threshold
+        self.min_h, self.max_h, self.max_err = min_h, max_h, max_err
+
+    def read(self, patch):
+        b = (patch > self.gt).astype(np.uint8)
+        n, lab, st, _ = cv2.connectedComponentsWithStats(b)
+        comps = [st[k].tolist() + [k] for k in range(1, n)
+                 if self.min_h <= st[k][3] <= self.max_h and 4 <= st[k][2] <= 45 and st[k][4] > 60]
+        if not comps:
+            return None
+        comps.sort(key=lambda c: c[0])
+        out = ""
+        for x, y, w, h, a, k in comps:
+            m = cv2.resize((lab[y:y + h, x:x + w] == k).astype(np.uint8) * 255, (24, 36),
+                           interpolation=cv2.INTER_AREA) > 127
+            if self.mat is None:
+                out += "?"
+                continue
+            d = (self.mat ^ m.ravel()).sum(1)
+            j = int(np.argmin(d))
+            out += self.labels[j] if d[j] < self.max_err else "?"
+        # una cifra que no se conoce (por ejemplo un 8 que todavia no se vio)
+        # queda como "?": el cambio de carreras se detecta igual
+        return out if "?" in out else str(int(out))
+
+
 def read_scorebug_video(path, profile, progress=None, cache=None):
     """Devuelve dict con listas por campo, una entrada por cuadro.
 
@@ -195,9 +233,10 @@ def read_scorebug_video(path, profile, progress=None, cache=None):
     if cache is not None and "readers" in cache:
         readers = cache["readers"]
     else:
-        readers = {n: GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
-                                  binarize=sp["binarize"], match=sp["match"],
-                                  strict_left=sp.get("strict_left", 0.0)) for n, sp in specs.items()}
+        readers = {n: (DigitReader(profile.templates.get("digit", []), glyph_threshold=gt) if sp["set"] == "digits" else
+                       GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
+                                   binarize=sp["binarize"], match=sp["match"],
+                                   strict_left=sp.get("strict_left", 0.0))) for n, sp in specs.items()}
         if cache is not None:
             cache["readers"] = readers
     pthr = cfg.get("presence_threshold", 20)
@@ -229,7 +268,7 @@ def read_scorebug_video(path, profile, progress=None, cache=None):
             fr = cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA)
         g = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
         gf = g.astype(np.float32)
-        score = float(np.abs(gf - profile.ref)[profile.mask].mean())
+        score = float(np.abs(gf - profile.ref)[profile.pmask].mean())
         present = score < pthr
         out["present"].append(present)
 
