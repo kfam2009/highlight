@@ -100,19 +100,23 @@ def find_final_graphic(video, t0, t1, crop=None, W=320, H=180):
         if k > 1:
             j = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
             w, h, a = st[j, 2] / W, st[j, 3] / H, st[j, 4] / (W * H)
-            ok = w >= 0.35 and h >= 0.04 and a >= 0.06 and dyn > 4
+            ok = w >= 0.28 and h >= 0.04 and a >= 0.035 and dyn > 4
         hits.append(ok)
-    # el primero que se queda en pantalla 8 s o mas
-    run = 0
-    for i, ok in enumerate(hits):
-        run = run + 1 if ok else 0
-        if run >= 8:
-            a = i - run + 1
-            b = i
-            while b + 1 < len(hits) and hits[b + 1]:
-                b += 1
-            return t0 + a + 2, t0 + b + 2
-    return None
+    # recuadros que se quedan en pantalla 8 s o mas; antes de la tabla del
+    # resultado suele aparecer otro (jugadora del partido, resumen): se usa el
+    # ultimo, que es la tabla que acompana el saludo
+    runs, i = [], 0
+    while i < len(hits):
+        if hits[i]:
+            j = i
+            while j + 1 < len(hits) and hits[j + 1]:
+                j += 1
+            if j - i + 1 >= 8:
+                runs.append((t0 + i + 2, t0 + j + 2))
+            i = j + 1
+        else:
+            i += 1
+    return runs[-1] if runs else None
 
 
 def refine_final(video, fin, crop=None, total_s=120.0):
@@ -123,6 +127,11 @@ def refine_final(video, fin, crop=None, total_s=120.0):
         return fin
     g = find_final_graphic(video, fin["pitchTime"] + 10, min(fin["pitchTime"] + 330, fin.get("videoEnd") or 1e9), crop)
     if not g:
+        # sin el grafico: 4 minutos desde el ultimo lanzamiento (festejos y
+        # saludo casi siempre entran); sobra, pero se recorta con I / O
+        fin = dict(fin)
+        fin["end"] = round(min(fin["start"] + 240.0, fin.get("videoEnd") or fin["start"] + 240.0), 2)
+        fin["duration"] = round(fin["end"] - fin["start"], 2)
         return fin
     fin = dict(fin)
     end = max(g[1] + 8.0, fin["start"] + total_s)
