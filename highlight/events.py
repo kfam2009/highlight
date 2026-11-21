@@ -653,6 +653,11 @@ def detect_game_over(raw, fps, regulation=7, absence_s=180.0, long_absence_s=900
     na, nh = _num(a), _num(h)
     diff = abs(na - nh) if na is not None and nh is not None else (1 if a != h else 0)
     mercy = any(inn >= i and diff >= d for i, d in MERCY.get(regulation, MERCY[7]))
+    # un marcador que el perfil todavia no sabe leer (10 o mas carreras) con
+    # 5 entradas jugadas: casi seguro es nocaut
+    if (str(a).startswith("?") or str(h).startswith("?")) and inn >= MERCY.get(regulation, MERCY[7])[-1][0]:
+        mercy = True
+        diff = max(diff, 1)
     info = {"t": L / fps, "score": f"{a}-{h}", "inning": inn}
     if gone >= absence_s and diff > 0 and (inn >= regulation or mercy):
         return {"reason": "fin", **info}

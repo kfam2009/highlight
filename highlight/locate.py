@@ -85,11 +85,18 @@ def locate_frames(frames, profile, min_score=0.8):
             _, mx, _, loc = cv2.minMaxLoc(r)
             if best is None or mx > best[0]:
                 best = (mx, loc, s)
-        if best and best[0] >= min_score:
+        # se anotan tambien los parecidos flojos (>= 0.6): si caen justo donde
+        # el perfil dice que va el scorebug, alcanza (el fondo detras del
+        # grafico cambia y baja el parecido); si esta corrido se pide min_score
+        if best and best[0] >= min(min_score, 0.6):
             mx, (lx, ly), s = best
             ox, oy = lx - bx * s, ly - by * s
             bw, bh = base.shape[1], base.shape[0]
             hits.append((mx, ox / bw, oy / bh, cw * s / bw, ch * s / bh))
+    default0 = (c["x"], c["y"], c["w"], c["h"])
+    in_place = [h for h in hits if max(abs(a - b) for a, b in zip(h[1:], default0)) < 0.01]
+    strong = [h for h in hits if h[0] >= min_score]
+    hits = in_place if len(in_place) >= max(3, len(strong)) else strong
     if len(hits) < 3:
         return None, {"status": "no encontrado", "found": len(hits), "frames": len(frames)}
     arr = np.array([h[1:] for h in hits])
