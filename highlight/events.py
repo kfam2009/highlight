@@ -90,36 +90,81 @@ def infer_innings(st):
     return st
 
 
+def fill_dips(seq, fps, max_s=40.0):
+    """Un numero que sube, baja un rato al valor anterior y vuelve a subir
+    (el replay o el operador muestran el grafico viejo) es un solo cambio: el
+    bache se rellena con el valor de antes y despues."""
+    out = list(seq)
+    runs = []  # (valor, inicio, fin)
+    for i, v in enumerate(out):
+        if runs and runs[-1][0] == v:
+            runs[-1][2] = i
+        else:
+            runs.append([v, i, i])
+    lim = max_s * fps
+    for k in range(1, len(runs) - 1):
+        a, m, b = _num(runs[k - 1][0]), _num(runs[k][0]), _num(runs[k + 1][0])
+        if a is None or m is None or b is None:
+            continue
+        if m < a and b >= a and runs[k][2] - runs[k][1] + 1 <= lim:
+            for i in range(runs[k][1], runs[k][2] + 1):
+                out[i] = runs[k - 1][0]
+            runs[k][0] = runs[k - 1][0]
+    return out
+
+
 def smooth_state(raw):
     st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    for k in ("away", "home", "outs"):
+        st[k] = fill_dips(st[k], raw.get("fps", 5))
     infer_innings(st)
-    cut = game_end_index(st)
+    cut = game_end_index(st, raw.get("fps", 5))
     if cut is not None:
         for k in ALL_FIELDS:
             st[k] = st[k][:cut] + [None] * (len(st[k]) - cut)
     return st
 
 
-def game_end_index(st):
+def game_end_index(st, fps=5, recover_s=120.0):
     """Despues del partido muchas transmisiones pasan un resumen con el
     scorebug de jugadas viejas. Se corta en el primer momento en que la
-    entrada o las carreras vuelven para atras."""
-    best = {"inning": 0, "away": 0, "home": 0}
+    entrada o las carreras vuelven para atras y no se recuperan.
+    Si el operador corrige (pone una carrera, la saca y la vuelve a poner) los
+    valores vuelven al maximo enseguida: eso no es el final."""
+    n = len(st["inning"])
     half_rank = {"T": 0, "B": 1}
-    last_pos = (0, 0)
-    for i in range(len(st["inning"])):
+    win = int(recover_s * fps)
+
+    def pos_at(i):
         inn = _num(st["inning"][i])
         h = st["half"][i]
-        if inn is not None and h in half_rank:
-            pos = (inn, half_rank[h])
-            if pos < last_pos and last_pos[0] - inn >= 1:
-                return i
-            last_pos = max(last_pos, pos)
+        return (inn, half_rank[h]) if inn is not None and h in half_rank else None
+
+    def recovers(i, test):
+        for j in range(i + 1, min(n, i + win + 1)):
+            if test(j):
+                return True
+        return False
+
+    best = {"away": 0, "home": 0}
+    last_pos = (0, 0)
+    for i in range(n):
+        pos = pos_at(i)
+        if pos is not None:
+            if pos < last_pos and last_pos[0] - pos[0] >= 1:
+                lp = last_pos
+                if not recovers(i, lambda j: (pos_at(j) or (0, 0)) >= lp):
+                    return i
+            else:
+                last_pos = max(last_pos, pos)
         for k in ("away", "home"):
             v = _num(st[k][i])
             if v is not None:
                 if v < best[k]:
-                    return i
+                    b = best[k]
+                    if not recovers(i, lambda j: (_num(st[k][j]) or -1) >= b):
+                        return i
+                    continue
                 best[k] = max(best[k], v)
     return None
 
@@ -184,7 +229,8 @@ def raw_changes(st, fps):
     for i in range(n):
         cur = {k: st[k][i] for k in ALL_FIELDS}
         if prev["outs"] is not None:
-            diff = [k for k in ["inning", "half"] + RESULT_FIELDS if cur[k] != prev[k] and cur[k] is not None]
+            diff = [k for k in ["inning", "half"] + RESULT_FIELDS if cur[k] != prev[k] and cur[k] is not None
+                    and not (k in ("inning", "half") and prev[k] is None)]
             if diff:
                 changes.append({"t": i / fps, "i": i, "fields": diff, "before": dict(prev), "after": dict(cur)})
         prev = cur
@@ -631,8 +677,10 @@ def detect_game_over(raw, fps, regulation=7, absence_s=180.0, long_absence_s=900
     if n == 0:
         return None
     st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    for k in ("away", "home", "outs"):
+        st[k] = fill_dips(st[k], fps)
     infer_innings(st)
-    gi = game_end_index(st)
+    gi = game_end_index(st, fps)
     if gi is not None:
         hold = int(reset_hold_s * fps)
         if gi + hold <= n and all(_num(st["inning"][i]) == 1 and _num(st["away"][i]) == 0 and _num(st["home"][i]) == 0
