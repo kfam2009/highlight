@@ -293,7 +293,7 @@ def rec_infos():
         out.append(info)
     cfg = load_config()
     return {"sources": out, "srtOk": _SRT_OK, "autoCut": cfg.get("auto_cut", True),
-            "autoAt": cfg.get("rec_auto_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == time.strftime("%Y-%m-%d")}
+            "autoAt": cfg.get("rec_auto_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == f"{time.strftime('%Y-%m-%d')} {cfg.get('rec_auto_at', '')}"}
 
 
 def rec_action(name, action, adopt_state=None):
@@ -544,7 +544,7 @@ def rec_scheduler(period=20, window_min=30):
                 hh, mm = [int(x) for x in at.split(":")[:2]]
                 now = time.localtime()
                 mins = now.tm_hour * 60 + now.tm_min - (hh * 60 + mm)
-                today = time.strftime("%Y-%m-%d")
+                today = f"{time.strftime('%Y-%m-%d')} {at}"   # cambiar la hora vale de nuevo el mismo dia
                 if 0 <= mins < window_min and _AUTO_REC_DONE.get("day") != today:
                     _AUTO_REC_DONE["day"] = today
                     for src in load_config().get("srt_sources", []):
