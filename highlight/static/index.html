@@ -106,7 +106,7 @@
 <main>
   <aside class="side">
     <div class="box" id="recBox">
-      <h3>Grabar señales <button class="small" id="openMonitor">Monitor</button></h3>
+      <h3>Grabar señales <span><button class="small" id="selfUpdate" title="Baja la versión nueva y reinicia el panel; las grabaciones siguen">Actualizar</button> <button class="small" id="openMonitor">Monitor</button></span></h3>
       <div class="list" id="recList"></div>
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
         <input type="checkbox" id="autoCut" style="width:auto"> <span>Separar los partidos solo (fin del juego en el scorebug)</span>
@@ -766,6 +766,19 @@ $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
 $('#openMonitor').onclick = openMonitor;
 $('#openFixture').onclick = openFixture;
+$('#selfUpdate').onclick = async () => {
+  const b = $('#selfUpdate'); b.disabled = true; b.textContent = 'Actualizando…';
+  let r;
+  try { r = await api('/api/update', {}); } catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { toast('No se pudo actualizar: ' + r.error); b.disabled = false; b.textContent = 'Actualizar'; return; }
+  toast('Versión nueva bajada. El panel se reinicia; las grabaciones siguen.');
+  await new Promise(res => setTimeout(res, 6000));
+  for (let k = 0; k < 40; k++) {
+    try { const x = await fetch('/api/config'); if (x.ok) { location.reload(); return; } } catch (e) {}
+    await new Promise(res => setTimeout(res, 2000));
+  }
+  b.disabled = false; b.textContent = 'Actualizar';
+};
 $('#autoAt').onchange = async () => { state.config = await api('/api/config', { rec_auto_at: $('#autoAt').value }); toast($('#autoAt').value ? `Empieza a grabar solo a las ${$('#autoAt').value}` : 'Grabación automática apagada'); };
 $('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);

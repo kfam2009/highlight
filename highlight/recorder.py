@@ -6,6 +6,7 @@ cuando vuelve abre un archivo nuevo ("parte 2"). "Cortar juego" cierra el
 archivo actual y empieza otro al instante, para separar un partido del
 siguiente cuando la senal es continua.
 """
+import json
 import os
 import queue
 import socket
@@ -115,6 +116,12 @@ class Recorder:
         self.thread = None
         self.record = False   # False = solo monitor (se ve la senal, no se graba)
         self.title_fn = title_fn   # nombre del partido segun el fixture (o None)
+        # estado para retomar la grabacion si el panel se reinicia: el ffmpeg
+        # sigue grabando solo y el panel nuevo se vuelve a enganchar
+        self.state_file = Path(pid_dir) / f"{_safe(name)}.rec.json" if pid_dir else None
+        self.ports = {}        # puertos UDP fijos: video, audio y nivel del monitor
+        self.video_sock = None
+        self._adopt = None     # estado de un ffmpeg que ya estaba grabando
 
     # ------------------------------------------------------------------
     def start(self):
@@ -144,6 +151,12 @@ class Recorder:
         self._kill()
 
     def _kill(self):
+        pid = getattr(self, "adopted_pid", None)
+        if pid:
+            # ffmpeg de antes del reinicio del panel: no tenemos su entrada
+            # para pedirle que cierre, se lo cierra de una
+            _kill_pid(pid)
+            return
         p = self.proc
         if p and p.poll() is None:
             try:
@@ -186,12 +199,42 @@ class Recorder:
         except Exception:
             pass
 
+    def _udp(self, key, rcvbuf=1 << 20):
+        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sk.bind(("127.0.0.1", int(self.ports.get(key) or 0)))
+        except OSError:
+            sk.bind(("127.0.0.1", 0))
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+        self.ports[key] = sk.getsockname()[1]
+        return sk
+
+    def _video_port(self):
+        if self.video_sock is None:
+            try:
+                self.video_sock = self._udp("video", 8 << 20)
+                threading.Thread(target=self._read_video_udp, daemon=True).start()
+            except OSError:
+                return None
+        return self.video_sock.getsockname()[1]
+
+    def _read_video_udp(self):
+        class _Src:
+            def __init__(self, sk):
+                self.sk = sk
+
+            def read1(self, n):
+                while True:
+                    try:
+                        return self.sk.recv(65536)
+                    except OSError:
+                        time.sleep(0.5)
+        self._read_frames(_Src(self.video_sock))
+
     def _audio_port(self):
         if self.audio_sock is None:
             try:
-                sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sk.bind(("127.0.0.1", 0))
-                sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+                sk = self._udp("audio")
                 self.audio_sock = sk
                 threading.Thread(target=self._read_audio, daemon=True).start()
             except OSError:
@@ -201,9 +244,7 @@ class Recorder:
     def _level_port(self):
         if getattr(self, "level_sock", None) is None:
             try:
-                sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sk.bind(("127.0.0.1", 0))
-                self.level_sock = sk
+                self.level_sock = self._udp("level")
                 threading.Thread(target=self._read_level, daemon=True).start()
             except OSError:
                 self.level_sock = None
@@ -259,6 +300,67 @@ class Recorder:
                 self.frame_cv.wait(timeout)
             return self.frame, self.frame_seq
 
+    def adopt(self, state):
+        """Engancharse a un ffmpeg que siguio grabando mientras el panel se
+        reiniciaba (la grabacion no se corta)."""
+        self.ports = dict(state.get("ports") or {})
+        self.record = True
+        self._adopt = state
+        return self.start()
+
+    def _save_state(self, pid, path, recording):
+        if not self.state_file:
+            return
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            self.state_file.write_text(json.dumps({"pid": pid, "file": str(path) if path else None,
+                                                   "record": recording, "ports": self.ports, "url": self.url,
+                                                   "started": self.started_file_at, "t": time.time()}),
+                                       encoding="utf-8")
+        except OSError:
+            pass
+
+    def _clear_state(self):
+        if self.state_file:
+            try:
+                self.state_file.unlink()
+            except OSError:
+                pass
+
+    def _run_adopted(self, st):
+        """El ffmpeg de antes del reinicio sigue grabando: se espera a que
+        termine (corte de senal, Cortar juego, Detener) y despues sigue normal."""
+        self.adopted_pid = int(st["pid"])
+        path = Path(st["file"])
+        if self.preview:
+            self._video_port()
+            self._audio_port()
+            self._level_port()
+        self.file, self.started_file_at = str(path), st.get("started") or time.time()
+        self.files.append(str(path))
+        self.status, self.message = "grabando", path.name
+        if self.on_new_file:
+            try:
+                self.on_new_file(str(path))
+            except Exception:
+                pass
+        n = 0
+        while not self._stop.is_set() and not self._cut.is_set():
+            if self.record is not True:
+                self._cut.set()
+                break
+            n += 1
+            if n % 3 == 0 and not _is_ffmpeg(self.adopted_pid):
+                break
+            time.sleep(1)
+        if self._cut.is_set() or self._stop.is_set():
+            _kill_pid(self.adopted_pid)
+        self.adopted_pid = None
+        self.file = None
+        with self.frame_cv:
+            self.frame = None
+            self.frame_cv.notify_all()
+
     # ------------------------------------------------------------------
     def _new_path(self):
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -286,6 +388,12 @@ class Recorder:
         return p
 
     def _run(self):
+        if self._adopt:
+            st, self._adopt = self._adopt, None
+            try:
+                self._run_adopted(st)
+            except Exception:
+                self.adopted_pid = None
         while not self._stop.is_set():
             self._cut.clear()
             recording = self.record
@@ -296,8 +404,11 @@ class Recorder:
                 cmd += ["-map", "0:v:0", "-map", "0:a?", "-c", "copy", "-f", "matroska", str(path)]
             if self.preview:
                 # monitor: video chico en JPEGs seguidos por la salida estandar
+                # (por UDP local y no por la salida estandar: si el panel se
+                # reinicia, ffmpeg sigue grabando y el panel nuevo se engancha)
+                vport = self._video_port()
                 cmd += ["-map", "0:v:0", "-vf", f"fps={MONITOR_FPS},scale={MONITOR_W}:-2", "-q:v", "7",
-                        "-c:v", "mjpeg", "-f", "mjpeg", "pipe:1"]
+                        "-c:v", "mjpeg", "-f", "mjpeg", f"udp://127.0.0.1:{vport}?pkt_size=32000"]
                 if not self.no_audio:
                     port = self._audio_port()
                     if port:
@@ -316,16 +427,18 @@ class Recorder:
             t0 = time.time()
             try:
                 errf = tempfile.TemporaryFile()
-                self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                                             stdout=subprocess.PIPE if self.preview else subprocess.DEVNULL, stderr=errf)
+                # en Windows, sin consola propia: si se cierra la ventana del
+                # panel, ffmpeg no se entera y la grabacion sigue
+                flags = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW
+                self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errf,
+                                             creationflags=flags)
+                self._save_state(self.proc.pid, path, recording)
                 if self.pid_file:
                     try:
                         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
                         self.pid_file.write_text(str(self.proc.pid))
                     except OSError:
                         pass
-                if self.preview:
-                    threading.Thread(target=self._read_frames, args=(self.proc.stdout,), daemon=True).start()
             except Exception as exc:
                 self.status, self.message = "error", str(exc)
                 return
@@ -347,6 +460,7 @@ class Recorder:
                     self.file, self.started_file_at = str(path), time.time()
                     self.files.append(str(path))
                     self.status, self.message = "grabando", path.name
+                    self._save_state(self.proc.pid, path, recording)
                     if self.on_new_file:
                         try:
                             self.on_new_file(str(path))
@@ -382,6 +496,7 @@ class Recorder:
                 self.pid_file.unlink()
             except OSError:
                 pass
+        self._clear_state()
         self.status, self.message = "detenido", ""
 
     def info(self):
@@ -398,13 +513,42 @@ class Recorder:
                 "level": round(self.audio_level, 1) if time.time() - self.level_t < 3 else None}
 
 
-def kill_orphans(pid_dir):
-    """Cerrar ffmpeg de grabaciones que quedaron sueltos (el panel se cerro de golpe)."""
+def _kill_pid(pid):
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=15)
+        else:
+            os.kill(pid, 15)
+    except Exception:
+        pass
+
+
+def adoptable(pid_dir):
+    """Grabaciones que siguieron solas mientras el panel se reiniciaba:
+    {nombre del archivo de estado: estado}."""
+    out = {}
+    for f in Path(pid_dir).glob("*.rec.json"):
+        try:
+            st = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if st.get("record") and st.get("pid") and st.get("file") and Path(st["file"]).exists() \
+                and _is_ffmpeg(int(st["pid"])):
+            out[f.name[:-len(".rec.json")]] = st
+    return out
+
+
+def kill_orphans(pid_dir, keep=()):
+    """Cerrar ffmpeg de grabaciones que quedaron sueltos (el panel se cerro de
+    golpe), menos los que se retoman (keep: pids)."""
+    keep = {int(k) for k in keep}
     for f in Path(pid_dir).glob("*.pid"):
         try:
             pid = int(f.read_text().strip())
         except (OSError, ValueError):
             pid = None
+        if pid in keep:
+            continue
         if pid and _is_ffmpeg(pid):
             try:
                 if os.name == "nt":
@@ -422,8 +566,8 @@ def kill_orphans(pid_dir):
     if os.name == "nt":
         try:
             cmd = ("Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | "
-                   "Where-Object { $_.CommandLine -like '*srt://*' } | "
-                   "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+                   "Where-Object { ($_.CommandLine -like '*srt://*' -or $_.CommandLine -like '*-follow 1*') -and @(%s) -notcontains $_.ProcessId } | "
+                   "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }") % (",".join(str(k) for k in keep) or "0")
             subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
                            capture_output=True, timeout=30)
         except Exception:

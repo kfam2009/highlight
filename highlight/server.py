@@ -230,7 +230,26 @@ def start_live(path, profile="auto", on_game_over=None, hint=None):
     def done(m):
         return auto_finish(m) if m else ""
 
-    s = LiveSession(path, runs_dir(), profile, on_done=done, on_game_over=on_game_over, profile_hint=hint).start()
+    s = LiveSession(path, runs_dir(), profile, on_done=done, on_game_over=on_game_over, profile_hint=hint)
+    # un analisis en vivo de este mismo video que quedo a medias (el panel se
+    # reinicio mientras grababa): se reemplaza por el nuevo, que relee todo
+    # desde el principio, y se conservan las decisiones ya tomadas
+    for old in list(runs_dir().glob("*/manifest.json")):
+        try:
+            m = json.loads(old.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        ls = str(m.get("liveStatus") or "")
+        if m.get("video") and str(Path(m["video"]).resolve()) == path and ls and "medias entradas" not in ls:
+            dec = old.parent / "decisiones.json"
+            try:
+                if dec.exists() and dec.stat().st_size > 2:
+                    s.run_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(dec, s.run_dir / "decisiones.json")
+                shutil.rmtree(old.parent)
+            except Exception:
+                traceback.print_exc()
+    s.start()
     LIVE[path] = s
     return s.info()
 
@@ -277,7 +296,7 @@ def rec_infos():
             "autoAt": cfg.get("rec_auto_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == time.strftime("%Y-%m-%d")}
 
 
-def rec_action(name, action):
+def rec_action(name, action, adopt_state=None):
     from .recorder import Recorder
 
     src = next((s for s in load_config().get("srt_sources", []) if s["name"] == name), None)
@@ -355,8 +374,11 @@ def rec_action(name, action):
             r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True,
                          pid_dir=Path(load_config()["data_dir"]) / "grabando", title_fn=game_title)
             RECORDERS[name] = r
-            r.record = action == "start"
-            r.start()
+            if adopt_state:
+                r.adopt(adopt_state)
+            else:
+                r.record = action == "start"
+                r.start()
         elif action == "start":
             r.set_record(True)
         if action == "start":
@@ -467,8 +489,20 @@ def ensure_monitors():
 
 
 def resume_recordings():
-    from .recorder import kill_orphans
-    kill_orphans(Path(load_config()["data_dir"]) / "grabando")
+    from .recorder import adoptable, kill_orphans, _safe as _rsafe
+    pid_dir = Path(load_config()["data_dir"]) / "grabando"
+    # las grabaciones que siguieron solas mientras el panel se reiniciaba se
+    # retoman sin cortarlas; los ffmpeg sueltos que no son de nadie se cierran
+    live = adoptable(pid_dir)
+    kill_orphans(pid_dir, keep=[st["pid"] for st in live.values()])
+    for src in load_config().get("srt_sources", []):
+        st = live.get(_rsafe(src["name"]))
+        if st and st.get("url") == src["url"]:
+            try:
+                print(f"Sigue grabando {src['name']} ({Path(st['file']).name}): me engancho sin cortar")
+                rec_action(src["name"], "start", adopt_state=st)
+            except Exception:
+                traceback.print_exc()
     time.sleep(2)
     ensure_monitors()
     p = _rec_state_path()
@@ -821,6 +855,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
                                                       body.get("range")))
+            if u.path == "/api/update":
+                return self.send_json(self_update())
             if u.path == "/api/delete-run":
                 return self.send_json(delete_run(body["runId"]))
         except Exception as exc:
@@ -957,6 +993,30 @@ def _setup_log():
         faulthandler.enable(log)
     except Exception:
         pass
+
+
+def self_update():
+    """Boton Actualizar: baja la version nueva de GitHub y reinicia el panel.
+    Las grabaciones siguen (el panel nuevo se engancha a ellas)."""
+    import sys
+    repo = Path(__file__).resolve().parent.parent
+    try:
+        out = subprocess.run(["git", "pull"], cwd=repo, capture_output=True, text=True, timeout=120)
+    except Exception as exc:
+        return {"error": f"No pude bajar la version nueva: {exc}"}
+    if out.returncode != 0:
+        return {"error": (out.stderr or out.stdout).strip()[-400:]}
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(repo / "requirements.txt")],
+                       cwd=repo, capture_output=True, timeout=600)
+    except Exception:
+        pass
+
+    def bye():
+        time.sleep(1.5)
+        os._exit(0)   # correr_servidor.bat lo vuelve a abrir en 3 segundos
+    threading.Thread(target=bye, daemon=True).start()
+    return {"ok": True, "git": out.stdout.strip()[-400:]}
 
 
 class ExclusiveServer(ThreadingHTTPServer):
