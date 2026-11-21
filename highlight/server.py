@@ -293,11 +293,16 @@ def rec_action(name, action):
                         Path(rec.file).resolve() == session.video:
                     why = {"fin": "fin del partido", "nuevo partido": "empezó otro partido",
                            "pausa larga": "scorebug ausente mucho tiempo"}.get(over["reason"], over["reason"])
+                    _game_state(name, over=True)
                     rec.cut(f"{why} ({over.get('score', '')}, {over.get('inning')}ª)")
 
             def new_file(path):
                 # cada archivo nuevo se analiza en vivo mientras se graba
                 rec = RECORDERS.get(name)
+                title = re.sub(r" parte \d+$", "", Path(path).stem)
+                st = _game_state(name)
+                if not st or st.get("title") != title or st.get("over"):
+                    _game_state(name, title=title, over=False)
                 hint = None
                 for prev in reversed(rec.files[:-1] if rec else []):
                     ss = LIVE.get(str(Path(prev).resolve()))
@@ -332,6 +337,11 @@ def rec_action(name, action):
                         time.sleep(5)
                 threading.Thread(target=remember, daemon=True).start()
             def game_title():
+                # si este campo estaba grabando un partido que no termino y la
+                # senal (o el panel) se corto hace poco, es el mismo partido
+                st = _game_state(name)
+                if st and not st.get("over") and time.time() - st.get("t", 0) < 20 * 60 and st.get("title"):
+                    return st["title"]
                 cfg = load_config()
                 s2 = next((x for x in cfg.get("srt_sources", []) if x["name"] == name), {})
                 fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
@@ -357,6 +367,25 @@ def rec_action(name, action):
     elif r and action == "cut":
         threading.Thread(target=r.cut, daemon=True).start()
     return rec_infos()
+
+
+def _game_state(name, **update):
+    """Partido que esta grabando cada campo (para no cambiarle el nombre si la
+    senal o el panel se cortan en medio del juego)."""
+    p = Path(load_config()["data_dir"]) / "grabando" / f"{safe_name(name)}.partido.json"
+    try:
+        st = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    except Exception:
+        st = {}
+    if update:
+        st.update(update)
+        st["t"] = time.time()
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    return st
 
 
 def fixture_edits_path():
@@ -461,6 +490,12 @@ def watcher(period=30, settle_s=120):
     """Modo automatico: un video que no cambia de tamano por ~2 minutos se
     considera terminado de grabar y se manda a analizar."""
     while True:
+        try:
+            for nm, rr in list(RECORDERS.items()):
+                if rr.record and rr.file:
+                    _game_state(nm, alive=True)   # sigue grabando: refresca la hora
+        except Exception:
+            pass
         try:
             cfg = load_config()
             if cfg.get("auto_analyze"):
