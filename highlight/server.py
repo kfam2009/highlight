@@ -322,6 +322,12 @@ def rec_action(name, action, adopt_state=None):
             def new_file(path):
                 # cada archivo nuevo se analiza en vivo mientras se graba
                 rec = RECORDERS.get(name)
+                # el archivo anterior de este campo ya no crece: su analisis se
+                # cierra enseguida (sale el Final sin esperar)
+                for prev in (rec.files[:-1] if rec else []):
+                    ps = LIVE.get(str(Path(prev).resolve()))
+                    if ps and not ps.finished:
+                        ps.finish()
                 title = re.sub(r" parte \d+$", "", Path(path).stem)
                 st = _game_state(name)
                 if not st or st.get("title") != title or st.get("over"):
@@ -385,6 +391,9 @@ def rec_action(name, action, adopt_state=None):
             _remember_recording(name, True)
     elif r and action == "stop":
         # deja de grabar; el monitor sigue mostrando la senal
+        ps = LIVE.get(str(Path(r.file).resolve())) if r.file else None
+        if ps and not ps.finished:
+            ps.finish()
         threading.Thread(target=r.set_record, args=(False,), daemon=True).start()
         _remember_recording(name, False)
     elif r and action == "off":

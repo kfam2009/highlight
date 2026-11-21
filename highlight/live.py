@@ -31,6 +31,7 @@ from .scorebug import Profile, read_scorebug_video, list_profiles
 SEGMENT_S = 60          # tramos de scorebug
 PUBLISH_MARGIN = 50.0   # segundos que se espera despues del cambio del scorebug
 IDLE_END_S = 180        # sin crecer este tiempo = termino la grabacion
+IDLE_DONE_S = 90        # en vivo: archivo quieto este tiempo = se cierra el analisis
 
 
 def _frames_from_start(video, seconds=240, every=12, width=960):
@@ -132,6 +133,7 @@ class LiveSession:
         self.proc = None
         self.thread = None
         self.stop_flag = False
+        self.finish_flag = False
         self.finished = False
 
     # ------------------------------------------------------------------ util
@@ -161,6 +163,11 @@ class LiveSession:
         self.thread.start()
         return self
 
+    def finish(self):
+        """La grabacion de este archivo termino: cerrar el analisis apenas
+        el archivo deje de crecer."""
+        self.finish_flag = True
+
     def stop(self):
         self.stop_flag = True
         if self.proc and self.proc.poll() is None:
@@ -176,8 +183,27 @@ class LiveSession:
                 return
             self._pick_profile()
             self._start_ffmpeg()
+            last_size, grew_at = -1, time.time()
             while True:
                 done = self.proc.poll() is not None
+                # la grabacion termino (Cortar juego, Detener, se corto la senal):
+                # si el archivo no crece mas, se cierra el analisis enseguida y
+                # sale el Final (ffmpeg con -follow no siempre se entera solo)
+                try:
+                    size = self.video.stat().st_size
+                except OSError:
+                    size = last_size
+                if size != last_size:
+                    last_size, grew_at = size, time.time()
+                elif not done and (time.time() - grew_at > IDLE_DONE_S or self.finish_flag) \
+                        and time.time() - grew_at > 20:
+                    time.sleep(5)   # que termine de escribir lo ultimo que leyo
+                    self.proc.terminate()
+                    try:
+                        self.proc.wait(timeout=20)
+                    except Exception:
+                        pass
+                    done = True
                 try:
                     self._cycle(final=False)
                 except Exception:
