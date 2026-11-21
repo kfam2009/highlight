@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     # senales SRT (Castr) que el panel graba solo: [{"name": "Campo 1", "url": "srt://..."}]
     "srt_sources": [],
     "auto_cut": True,                # cortar solo el archivo cuando termina cada partido
+    "rec_auto_at": "",               # "HH:MM" (hora de la PC): empezar a grabar todos los campos solo
     "previa": True,                  # buscar himnos y saludo antes del primer lanzamiento
     "fixture": "u18_panam_2026.json",  # nombres de los partidos (highlight/fixtures/)
 }
@@ -271,7 +272,9 @@ def rec_infos():
         info = info if info is not None else {"name": src["name"], "url": src["url"], "status": "detenido", "message": "",
                                    "file": None, "sizeMb": None, "since": None, "files": []}
         out.append(info)
-    return {"sources": out, "srtOk": _SRT_OK, "autoCut": load_config().get("auto_cut", True)}
+    cfg = load_config()
+    return {"sources": out, "srtOk": _SRT_OK, "autoCut": cfg.get("auto_cut", True),
+            "autoAt": cfg.get("rec_auto_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == time.strftime("%Y-%m-%d")}
 
 
 def rec_action(name, action):
@@ -479,6 +482,37 @@ def resume_recordings():
             rec_action(name, "start")
         except Exception:
             traceback.print_exc()
+
+
+_AUTO_REC_DONE = {}
+
+
+def rec_scheduler(period=20, window_min=30):
+    """Grabar solo a una hora fija (rec_auto_at, hora de la PC): a esa hora se
+    ponen a grabar todos los campos que no esten grabando. Una vez por dia;
+    si la PC estaba apagada a esa hora, arranca igual dentro de los 30 minutos."""
+    while True:
+        try:
+            at = str(load_config().get("rec_auto_at") or "").strip()
+            if at:
+                hh, mm = [int(x) for x in at.split(":")[:2]]
+                now = time.localtime()
+                mins = now.tm_hour * 60 + now.tm_min - (hh * 60 + mm)
+                today = time.strftime("%Y-%m-%d")
+                if 0 <= mins < window_min and _AUTO_REC_DONE.get("day") != today:
+                    _AUTO_REC_DONE["day"] = today
+                    for src in load_config().get("srt_sources", []):
+                        r = RECORDERS.get(src["name"])
+                        if r and r.record:
+                            continue
+                        print(f"Grabación automática ({at}): {src['name']}")
+                        try:
+                            rec_action(src["name"], "start")
+                        except Exception:
+                            traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(period)
 
 
 # ---------------------------------------------------------------- carpeta vigilada
@@ -752,7 +786,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut", "fixture", "previa"):
+                          "srt_sources", "auto_cut", "fixture", "previa", "rec_auto_at"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
@@ -952,6 +986,7 @@ def main():
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=watcher, daemon=True).start()
     threading.Thread(target=resume_recordings, daemon=True).start()
+    threading.Thread(target=rec_scheduler, daemon=True).start()
     # el video y el audio del monitor van por otro puerto: el navegador abre
     # pocas conexiones por puerto y si las ocupan las transmisiones, los botones
     # del panel quedan esperando

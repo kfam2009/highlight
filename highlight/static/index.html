@@ -111,6 +111,9 @@
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
         <input type="checkbox" id="autoCut" style="width:auto"> <span>Separar los partidos solo (fin del juego en el scorebug)</span>
       </label>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin-top:6px">
+        <span>Empezar a grabar solo a las</span> <input type="time" id="autoAt" style="width:auto"> <span class="muted" id="autoAtNote"></span>
+      </label>
       <div class="muted" id="recNote" style="margin-top:6px">Graba la señal tal cual llega (sin recodificar) en la carpeta de partidos y la analiza en vivo. Cuando termina un partido lo cierra y sigue con el próximo en un archivo nuevo. <b>Cortar juego</b> hace lo mismo a mano.</div>
     </div>
     <div class="box" id="autoBox">
@@ -408,6 +411,8 @@ async function pollRec() {
     $('#goCfg').onclick = () => { const d = $('details'); d.open = true; d.scrollIntoView({ behavior: 'smooth' }); $('#srtUrl1').focus(); };
   }
   $('#autoCut').checked = r.autoCut !== false;
+  if (document.activeElement !== $('#autoAt')) $('#autoAt').value = r.autoAt || '';
+  $('#autoAtNote').textContent = r.autoAt ? (r.autoAtDone ? '(hoy ya arrancó)' : '(todos los días, hora de esta PC)') : '';
   const color = { grabando: 'err', monitor: 'ok', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
   if (r.sources.length) $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
     const on = !!x.record && x.status !== 'detenido' && x.status !== 'error';
@@ -761,6 +766,7 @@ $('#analyzeSel').onclick = analyzeSelected;
 $('#saveCfg').onclick = saveConfig;
 $('#openMonitor').onclick = openMonitor;
 $('#openFixture').onclick = openFixture;
+$('#autoAt').onchange = async () => { state.config = await api('/api/config', { rec_auto_at: $('#autoAt').value }); toast($('#autoAt').value ? `Empieza a grabar solo a las ${$('#autoAt').value}` : 'Grabación automática apagada'); };
 $('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
 $('#previaOn').onchange = async () => { state.config = await api('/api/config', { previa: $('#previaOn').checked }); toast($('#previaOn').checked ? 'Se buscan himnos y saludo' : 'Sin himnos ni saludo'); };
