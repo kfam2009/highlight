@@ -596,7 +596,7 @@ function cardHtml(c) {
   const poster = c.poster ? `/media/${encodeURIComponent(state.run.runId)}/${c.poster}` : '';
   return `
   <div class="card ${d.decision || ''}" data-id="${c.id}" tabindex="0">
-    ${src ? `<video preload="metadata" controls muted src="${src}" poster="${poster}"></video>
+    ${src ? `<video preload="none" controls muted src="${src}" poster="${poster}"></video>
     <div class="tl" data-tl title="Clic para ir a ese momento"><div class="tl-play"></div><div class="tl-pos"></div></div>` : '<div class="empty">Sin vista previa</div>'}
     <div class="body">
       <div class="ctitle"><b>${c.id}. ${esc(c.title)}</b>
@@ -708,6 +708,10 @@ function bindCard(el) {
 function focusCard(el, scroll = true) {
   $$('.card.focus').forEach(x => x.classList.remove('focus'));
   el.classList.add('focus'); state.focus = el.dataset.id;
+  // los videos se cargan recien cuando se usa el cuadro: con 150 jugadas, si
+  // se cargan todos juntos el navegador hace cola y ninguno arranca
+  const v = $('video', el);
+  if (v && v.preload !== 'auto') { v.preload = 'auto'; if (!v.duration) v.load(); }
   if (scroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 document.addEventListener('keydown', e => {
