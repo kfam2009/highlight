@@ -548,7 +548,24 @@ def half_ranges(st, fps, min_len_s=20.0):
             clean[-1]["end"] = h["end"]
             continue
         clean.append(h)
-    return clean
+    # una media entrada que vuelve para atras (el operador muestra un rato la
+    # entrada anterior, o un replay con el grafico viejo) no es una media
+    # entrada nueva: se suma a la que se estaba jugando
+    rank = {"T": 0, "B": 1}
+    final, best = [], None
+    for h in clean:
+        n_ = _num(h["inning"])
+        pos = (n_, rank.get(h["half"], 0)) if n_ is not None else None
+        if pos is not None and best is not None and pos < best and final and h["end"] - h["start"] <= 180.0:
+            final[-1]["end"] = h["end"]
+            continue
+        if final and final[-1]["inning"] == h["inning"] and final[-1]["half"] == h["half"]:
+            final[-1]["end"] = h["end"]
+            continue
+        if pos is not None:
+            best = pos if best is None else max(best, pos)
+        final.append(h)
+    return final
 
 
 def absence_replays(raw, st, fps, min_s=3.0, max_s=45.0):

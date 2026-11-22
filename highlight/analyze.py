@@ -222,6 +222,15 @@ def build_clips(result):
             status = "ok"
         else:
             status = "sin_cierre"  # no se vio el 3er out (pasa en la ultima entrada: lo cubre el Final)
+        same = next((x for x in halves if x["key"] == key), None)
+        if same is not None:
+            # la misma media entrada aparece dos veces (el grafico volvio un
+            # rato a una entrada anterior): una sola en la lista
+            same["clips"] += ids
+            same["end"] = max(same["end"], h["end"])
+            if status == "ok":
+                same["status"] = "ok"
+            continue
         halves.append({"key": key, "label": half_label(h["inning"], h["half"]), "inning": h["inning"], "half": h["half"],
                        "start": h["start"], "end": h["end"], "clips": ids, "status": status})
     fin = result.get("final")
