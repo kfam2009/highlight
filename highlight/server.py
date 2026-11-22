@@ -387,7 +387,11 @@ def rec_action(name, action, adopt_state=None):
                 cfg = load_config()
                 s2 = next((x for x in cfg.get("srt_sources", []) if x["name"] == name), {})
                 fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
-                g = fixture_mod.match(fx, s2.get("field"))
+                g = None
+                if st and st.get("over"):
+                    # el partido anterior ya termino: el archivo nuevo es el proximo
+                    g = fixture_mod.next_game(fx, s2.get("field"), within_h=3.0)
+                g = g or fixture_mod.match(fx, s2.get("field"))
                 return fixture_mod.title(g) if g else None
 
             r = Recorder(name, src["url"], rec_folder(), on_new_file=new_file, preview=True,
