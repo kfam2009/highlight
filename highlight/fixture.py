@@ -88,6 +88,20 @@ def match(fx, field, when=None):
     return None
 
 
+def next_game(fx, field, when=None, within_h=4.0):
+    """Proximo partido de esa cancha que todavia no empezo (en las proximas
+    within_h horas), o None si ya no hay mas por hoy."""
+    import time as _t
+    if not fx or not field:
+        return None
+    t = when or _t.time()
+    games = sorted((g for g in fx["games"] if g["field"] == field and g["start"] > t - 15 * 60), key=lambda g: g["start"])
+    for g in games:
+        if g["start"] - t <= within_h * 3600:
+            return g
+    return None
+
+
 def title(g):
     name = f"Gm {g['n']:02d} {g['away']} vs {g['home']}"
     return re.sub(r'[<>:"/\\|?*]+', "", name).strip()

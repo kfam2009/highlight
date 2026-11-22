@@ -43,6 +43,8 @@ DEFAULT_CONFIG = {
     "srt_sources": [],
     "auto_cut": True,                # cortar solo el archivo cuando termina cada partido
     "rec_auto_at": "",               # "HH:MM" (hora de la PC): empezar a grabar todos los campos solo
+    "rec_stop_at": "03:00",          # "HH:MM": parar todas las grabaciones (por las dudas, de noche)
+    "stop_after_last": True,         # termino el ultimo partido del dia en esa cancha: parar en vez de seguir
     "previa": True,                  # buscar himnos y saludo antes del primer lanzamiento
     "fixture": "u18_panam_2026.json",  # nombres de los partidos (highlight/fixtures/)
 }
@@ -293,7 +295,7 @@ def rec_infos():
         out.append(info)
     cfg = load_config()
     return {"sources": out, "srtOk": _SRT_OK, "autoCut": cfg.get("auto_cut", True),
-            "autoAt": cfg.get("rec_auto_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == f"{time.strftime('%Y-%m-%d')} {cfg.get('rec_auto_at', '')}"}
+            "autoAt": cfg.get("rec_auto_at", ""), "stopAt": cfg.get("rec_stop_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == f"{time.strftime('%Y-%m-%d')} {cfg.get('rec_auto_at', '')}"}
 
 
 def rec_action(name, action, adopt_state=None):
@@ -317,7 +319,18 @@ def rec_action(name, action, adopt_state=None):
                     why = {"fin": "fin del partido", "nuevo partido": "empezó otro partido",
                            "pausa larga": "scorebug ausente mucho tiempo"}.get(over["reason"], over["reason"])
                     _game_state(name, over=True)
-                    rec.cut(f"{why} ({over.get('score', '')}, {over.get('inning')}ª)")
+                    cfg = load_config()
+                    s2 = next((x for x in cfg.get("srt_sources", []) if x["name"] == name), {})
+                    fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path()) if cfg.get("stop_after_last", True) else None
+                    if fx and s2.get("field") and not fixture_mod.next_game(fx, s2["field"]):
+                        # era el ultimo partido del dia en esa cancha: se deja de
+                        # grabar (el monitor sigue) en vez de abrir otro archivo
+                        rec.last_cut = f"{time.strftime('%H:%M')} {why}: último partido del día, grabación parada"
+                        session.finish()
+                        threading.Thread(target=rec.set_record, args=(False,), daemon=True).start()
+                        _remember_recording(name, False)
+                    else:
+                        rec.cut(f"{why} ({over.get('score', '')}, {over.get('inning')}ª)")
 
             def new_file(path):
                 # cada archivo nuevo se analiza en vivo mientras se graba
@@ -531,6 +544,7 @@ def resume_recordings():
 
 
 _AUTO_REC_DONE = {}
+_AUTO_STOP_DONE = {}
 
 
 def rec_scheduler(period=20, window_min=30):
@@ -556,6 +570,21 @@ def rec_scheduler(period=20, window_min=30):
                             rec_action(src["name"], "start")
                         except Exception:
                             traceback.print_exc()
+            stop_at = str(load_config().get("rec_stop_at") or "").strip()
+            if stop_at:
+                hh, mm = [int(x) for x in stop_at.split(":")[:2]]
+                now = time.localtime()
+                mins = now.tm_hour * 60 + now.tm_min - (hh * 60 + mm)
+                key = f"{time.strftime('%Y-%m-%d')} {stop_at}"
+                if 0 <= mins < window_min and _AUTO_STOP_DONE.get("day") != key:
+                    _AUTO_STOP_DONE["day"] = key
+                    for nm, r in list(RECORDERS.items()):
+                        if r.record:
+                            print(f"Parada automática ({stop_at}): {nm}")
+                            try:
+                                rec_action(nm, "stop")
+                            except Exception:
+                                traceback.print_exc()
         except Exception:
             traceback.print_exc()
         time.sleep(period)
@@ -832,7 +861,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut", "fixture", "previa", "rec_auto_at"):
+                          "srt_sources", "auto_cut", "fixture", "previa", "rec_auto_at", "rec_stop_at", "stop_after_last"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
