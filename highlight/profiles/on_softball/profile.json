@@ -19,11 +19,11 @@
     "away": [
       0,
       80,
-      100,
+      84,
       165
     ],
     "home": [
-      325,
+      342,
       80,
       425,
       165
@@ -47,10 +47,10 @@
       190
     ],
     "inning": [
-      203,
-      143,
-      227,
-      167
+      199,
+      139,
+      231,
+      169
     ]
   },
   "glyph_fields": {
@@ -59,9 +59,10 @@
     "count": "count",
     "outs": "outs",
     "inning": {
-      "set": "inning",
-      "match": "ink",
-      "ratio": 0.2
+      "set": "digits",
+      "min_h": 12,
+      "max_h": 30,
+      "max_err": 140
     }
   },
   "points": {

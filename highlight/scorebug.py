@@ -174,7 +174,8 @@ def _glyph_specs(cfg):
         else:
             specs[name] = {"set": v["set"], "invert": bool(v.get("invert")), "ratio": v.get("ratio", 0.08),
                            "binarize": v.get("binarize", "fixed"), "match": v.get("match", "area"),
-                           "strict_left": v.get("strict_left", 0.0)}
+                           "strict_left": v.get("strict_left", 0.0),
+                           "min_h": v.get("min_h", 35), "max_h": v.get("max_h", 60), "max_err": v.get("max_err", 90)}
     return specs
 
 
@@ -233,7 +234,8 @@ def read_scorebug_video(path, profile, progress=None, cache=None):
     if cache is not None and "readers" in cache:
         readers = cache["readers"]
     else:
-        readers = {n: (DigitReader(profile.templates.get("digit", []), glyph_threshold=gt) if sp["set"] == "digits" else
+        readers = {n: (DigitReader(profile.templates.get("digit", []), glyph_threshold=gt, min_h=sp.get("min_h", 35),
+                                   max_h=sp.get("max_h", 60), max_err=sp.get("max_err", 90)) if sp["set"] == "digits" else
                        GlyphReader(profile.templates.get(sp["set"], []), thr_ratio=sp["ratio"], glyph_threshold=gt,
                                    binarize=sp["binarize"], match=sp["match"],
                                    strict_left=sp.get("strict_left", 0.0))) for n, sp in specs.items()}
