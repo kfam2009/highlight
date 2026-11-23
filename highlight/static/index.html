@@ -532,7 +532,8 @@ function renderRun() {
         <div><div class="title">${r.live ? '<span class="tag err">● EN VIVO</span> ' : ''}${esc(r.videoName)}</div><div class="muted">${fmt(r.duration)} de video · perfil ${esc(r.profile)}</div>
           ${r.live ? `<div class="muted" id="liveStatus">${esc(r.liveStatus || '')}</div>` : ''}</div>
         <div class="row">
-          <button id="reanalyze" title="Vuelve a armar la historia con la última versión del programa, sin leer el video de nuevo">Re-analizar</button>
+          ${r.subsetOf ? '' : `<button id="reanalyze" title="Vuelve a armar la historia con la última versión del programa, sin leer el video de nuevo">Re-analizar</button>
+          <button id="subsetBtn" title="Análisis aparte con solo las carreras (y los himnos) de todas las partes de este partido">Solo carreras</button>`}
           <button id="approveSug" title="Carreras, hits, doble plays, 3er out con corredores y el final">Aprobar sugeridos</button>
           <button id="approveSugK" title="Sugeridos + los ponches que cierran una entrada">Sugeridos + ponches de cierre</button>
           <button class="blue" id="xmlBtn" title="Archivo .xml para Premiere: la secuencia armada con el video original, sin renderizar">Línea para Premiere</button>
@@ -557,7 +558,14 @@ function renderRun() {
   };
   $('#xmlBtn').onclick = exportXml;
   renderCheck();
-  $('#reanalyze').onclick = async () => {
+  if ($('#subsetBtn')) $('#subsetBtn').onclick = async () => {
+    try {
+      const x = await api('/api/subset', { runId: r.runId, types: ['carrera'] });
+      toast(`Listo: ${x.clips} jugadas de ${x.parts} parte(s)`);
+      openRun(x.runId);
+    } catch (e) { toast('No se pudo: ' + e.message); }
+  };
+  if ($('#reanalyze')) $('#reanalyze').onclick = async () => {
     if (!confirm('Se arma un análisis nuevo con la lógica actual (no vuelve a leer el video completo). ¿Seguir?')) return;
     await api('/api/reanalyze', { runId: r.runId }); pollJobs(); toast('Re-análisis en la cola');
   };

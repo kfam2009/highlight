@@ -99,7 +99,8 @@ def scan_videos():
     out.sort(key=lambda v: v["modified"], reverse=True)
     analyzed = {}
     for run in scan_runs():
-        analyzed.setdefault(run["video"], run["runId"])
+        if not run.get("subset"):
+            analyzed.setdefault(run["video"], run["runId"])
     for v in out:
         v["runId"] = analyzed.get(v["path"])
     return out
@@ -114,6 +115,7 @@ def scan_runs():
             continue
         dec = load_decisions(m["runId"])
         out.append({"runId": m["runId"], "videoName": m.get("videoName"), "video": m.get("video"),
+                    "subset": bool(m.get("subsetOf")),
                     "clips": len(m.get("clips", [])), "created": m.get("created", mp.stat().st_mtime),
                     "finalScore": m.get("stats", {}).get("finalScore", ""),
                     "approved": sum(1 for d in dec.values() if d.get("decision") == "approved"),
@@ -688,7 +690,7 @@ def export_approved(run_id, folder=""):
     m = load_run(run_id)
     dec = m["decisions"]
     video = Path(m["video"])
-    if not video.exists():
+    if not video.exists() and not any(c.get("video") for c in m["clips"]):
         raise FileNotFoundError(f"No encuentro el video original: {video}")
     cfg = load_config()
     if folder:
@@ -708,7 +710,7 @@ def export_approved(run_id, folder=""):
         start, length = adjusted_window(c, d)
         name = f"{order:02d}_{c['half']}_{safe_name(c['title'])}_{int(start // 60):03d}m{int(start % 60):02d}s.mp4"
         dest = out_dir / name
-        if cut(video, dest, start, length, mode="export"):
+        if cut(Path(c.get("video") or video), dest, start, length, mode="export"):
             done.append({"order": order, "id": c["id"], "half": c["halfLabel"], "title": c["title"],
                          "file": dest.name, "start": round(start, 2), "length": round(length, 2)})
         else:
@@ -719,6 +721,75 @@ def export_approved(run_id, folder=""):
         json.dumps({"runId": run_id, "video": str(video), "clips": done, "decisions": dec}, indent=2, ensure_ascii=False),
         encoding="utf-8")
     return {"folder": str(out_dir), "count": len(done), "failed": failed}
+
+
+def subset_run(run_id, types, label=""):
+    """Analisis aparte con solo algunos tipos de jugada (por ejemplo las
+    carreras) de todas las partes de un mismo partido, mas la previa.
+    Copia las vistas previas: el analisis original no se toca."""
+    src = load_run(run_id)
+    base = re.sub(r" parte \d+$", "", Path(src["videoName"]).stem)
+    parts = []
+    for mp in runs_dir().glob("*/manifest.json"):
+        try:
+            m = json.loads(mp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if m.get("subsetOf"):
+            continue
+        if re.sub(r" parte \d+$", "", Path(m.get("videoName", "")).stem) == base:
+            m["decisions"] = load_decisions(m["runId"])
+            parts.append(m)
+    def part_no(m):
+        g = re.search(r" parte (\d+)$", Path(m["videoName"]).stem)
+        return int(g.group(1)) if g else 1
+    parts.sort(key=part_no)
+    types = set(types or ["carrera"])
+    label = label or ("solo carreras" if types == {"carrera"} else "solo " + ", ".join(sorted(types)))
+    new_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{safe_name(base)}_{safe_name(label)}"
+    out = runs_dir() / new_id
+    (out / "clips").mkdir(parents=True, exist_ok=True)
+    clips, halves, dec, n = [], [], {}, 0
+    for m in parts:
+        for c in m["clips"]:
+            if c["type"] not in types and c.get("half") != "PRE":
+                continue
+            n += 1
+            nc = dict(c)
+            nc["id"] = f"P{n}" if c.get("half") == "PRE" else f"{n:02d}"
+            nc["video"] = m["video"]
+            for key in ("file", "poster"):
+                if c.get(key):
+                    f = run_path(m["runId"]) / c[key]
+                    if f.exists():
+                        dest = out / "clips" / f"{nc['id']}_{Path(c[key]).name.split('_', 1)[-1]}"
+                        shutil.copy2(f, dest)
+                        nc[key] = f"clips/{dest.name}"
+            if c["id"] in m["decisions"]:
+                dec[nc["id"]] = m["decisions"][c["id"]]
+            clips.append(nc)
+            h = next((x for x in halves if x["key"] == nc["half"]), None)
+            if h is None:
+                h = {"key": nc["half"], "label": nc.get("halfLabel", nc["half"]), "start": nc["start"], "end": nc["end"],
+                     "clips": [], "status": "ok"}
+                halves.append(h)
+            h["clips"].append(nc["id"])
+            h["end"] = max(h["end"], nc["end"])
+    halves.sort(key=lambda h: h["key"] != "PRE")
+    if not clips:
+        shutil.rmtree(out, ignore_errors=True)
+        raise ValueError("No hay jugadas de ese tipo en este partido")
+    first = parts[0]
+    manifest = {"runId": new_id, "video": first["video"], "videoName": f"{base} · {label}.mkv",
+                "profile": first.get("profile"), "duration": max(p.get("duration") or 0 for p in parts),
+                "created": time.time(), "subsetOf": [p["runId"] for p in parts],
+                "liveStatus": f"{len(clips)} jugadas en {len(halves)} medias entradas · {label}",
+                "stats": {"halves": len(halves), "clips": len(clips),
+                          "carreras": sum(1 for c in clips if c["type"] == "carrera")},
+                "halves": halves, "clips": clips, "logic": [f"Analisis aparte: {label} de {len(parts)} parte(s)."]}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / "decisiones.json").write_text(json.dumps(dec, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"runId": new_id, "clips": len(clips), "parts": len(parts)}
 
 
 def export_dir_for(m, folder=""):
@@ -834,7 +905,7 @@ def export_sequence(run_id, folder=""):
     m = load_run(run_id)
     dec = m["decisions"]
     video = Path(m["video"])
-    if not video.exists():
+    if not video.exists() and not any(c.get("video") for c in m["clips"]):
         raise FileNotFoundError(f"No encuentro el video original: {video}")
     items = []
     out_dir = export_dir_for(m, folder)
@@ -844,11 +915,12 @@ def export_sequence(run_id, folder=""):
         if d.get("decision") != "approved":
             continue
         start, length = adjusted_window(c, d)
-        it = {"start": start, "length": length, "gain": audio_gain(video, start, length),
+        cv = Path(c.get("video") or video)
+        it = {"start": start, "length": length, "gain": audio_gain(cv, start, length),
               "title": f"{c['id']} {c['halfLabel']} - {c['title']}",
               "marker": " · ".join(x for x in [c["halfLabel"], c["title"], c.get("detail", "")] if x)}
-        if video.suffix.lower() not in (".mp4", ".mov"):
-            seg = copy_segment(video, media, f"{c['id']}_{c['half']}", start, length)
+        if cv.suffix.lower() not in (".mp4", ".mov") or cv != video:
+            seg = copy_segment(cv, media, f"{c['id']}_{c['half']}", start, length)
             if seg:
                 it.update(seg)
                 it["gain"] = 1.0   # el pedazo ya trae el audio nivelado
@@ -875,7 +947,7 @@ def render_adjusted(run_id, clip_id, decision, rng=None):
     out_dir = run_path(run_id) / "ajustados"
     out_dir.mkdir(exist_ok=True)
     dest = out_dir / f"{clip_id}_{int(time.time())}.mp4"
-    if not cut(m["video"], dest, start, length, mode="preview"):
+    if not cut(c.get("video") or m["video"], dest, start, length, mode="preview"):
         raise RuntimeError("No se pudo cortar el clip ajustado (¿esta el video original?)")
     return {"file": f"/media/{run_id}/ajustados/{dest.name}", "start": round(start, 2), "end": round(start + length, 2),
             "length": length}
@@ -1001,6 +1073,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
                                                       body.get("range")))
+            if u.path == "/api/subset":
+                return self.send_json(subset_run(body["runId"], body.get("types") or ["carrera"], body.get("label", "")))
             if u.path == "/api/export-range":
                 return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", "")))
             if u.path == "/api/remux":
