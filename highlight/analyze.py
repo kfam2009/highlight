@@ -358,6 +358,11 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
     except Exception:
         result["pregame"] = []
     clips, halves = build_clips(result)
+    try:
+        from . import trim
+        trim.apply(clips, trim.pitch_shots(ctx, trim.pitch_template(ctx)))
+    except Exception:
+        pass
 
     if render_previews:
         for k, c in enumerate(clips):
@@ -366,8 +371,9 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
             # la vista previa trae margen de mas a cada lado para poder marcar
             # inicio y fin por fuera del corte sugerido
             hd = PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE
-            p0 = max(0.0, c["start"] - hd)
-            p1 = min(duration or c["end"] + hd, c["end"] + hd)
+            p0 = max(0.0, min(c["start"], c.get("origStart", c["start"])) - hd)
+            p1 = max(c["end"], c.get("origEnd", c["end"])) + hd
+            p1 = min(duration or p1, p1)
             if cut(video, out, p0, p1 - p0, mode="preview"):
                 c["file"] = f"clips/{out.name}"
                 c["previewStart"], c["previewEnd"] = round(p0, 2), round(p1, 2)

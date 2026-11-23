@@ -108,6 +108,7 @@ def load_ctx_raw(path):
 class LiveSession:
     def __init__(self, video, runs_dir, profile_name="auto", on_done=None, on_game_over=None, profile_hint=None):
         self.video = Path(video).resolve()
+        self._pc_tpl, self._pc_n = None, 0
         self.runs_dir = Path(runs_dir)
         self.profile_name = profile_name
         self.on_done = on_done
@@ -377,6 +378,13 @@ class LiveSession:
                     self.pregame = []
         result["pregame"] = self.pregame or []
         clips, halves = build_clips(result)
+        try:
+            from . import trim
+            if ctx is not None and (self._pc_tpl is None or len(ctx) - self._pc_n > 1200):
+                self._pc_tpl, self._pc_n = trim.pitch_template(ctx), len(ctx)
+            trim.apply(clips, trim.pitch_shots(ctx, self._pc_tpl))
+        except Exception:
+            traceback.print_exc()
         limit = float("inf") if final else self.processed_s - PUBLISH_MARGIN
         for c in clips:
             if c["type"] == "revisar" and not final:
@@ -401,8 +409,8 @@ class LiveSession:
 
     def _render(self, c):
         hd = PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE
-        p0 = max(0.0, c["start"] - hd)
-        p1 = c["end"] + hd
+        p0 = max(0.0, min(c["start"], c.get("origStart", c["start"])) - hd)
+        p1 = max(c["end"], c.get("origEnd", c["end"])) + hd
         out = self.clip_dir / f"{c['id']}_{c['half']}_{c['type']}.mp4"
         if cut(self.video, out, p0, p1 - p0, mode="preview"):
             c["file"] = f"clips/{out.name}"
