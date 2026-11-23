@@ -177,6 +177,8 @@ def build_clips(result):
             if e["type"] == "carrera" and e.get("runs") not in (0, None):
                 r = e["runs"]
                 title = "Carrera" if r == 1 else (f"{r} carreras" if r != "?" else "Carrera(s)")
+                if e.get("timing") == "tramo":
+                    title += " · varias jugadas, revisá el tramo"
             detail = []
             if score_text(b) and score_text(a) and score_text(b) != score_text(a):
                 detail.append(f"{score_text(b)} → {score_text(a)}")

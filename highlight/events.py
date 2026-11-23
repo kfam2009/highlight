@@ -643,6 +643,14 @@ def build_story(raw, ctx_stingers=None, audio_rms=None, audio_rate=4, replay_fro
               "after": {k: g["after"][k] for k in ALL_FIELDS}}
         ev.update(time_play(ev, t_prev, mph, blocks, audio_rms, audio_rate, audio_thr, present=raw["present"], fps=fps,
                             count_changes=count_changes if out_from_count else None))
+        r = ev.get("runs")
+        if ev["type"] == "carrera" and (r == "?" or (isinstance(r, int) and r >= 3)) and ev["start"] - t_prev > 20:
+            # muchas carreras de golpe: el operador actualizo el grafico tarde
+            # y en el medio hubo varias jugadas. El clip cubre todo el tramo
+            # desde la jugada anterior (se recorta con I / O)
+            ev["start"] = round(max(t_prev, ev["start"] - 300.0), 2)
+            ev["timing"] = "tramo"
+            ev["label"] = f"{ev.get('label', 'Carreras')} (varias jugadas: revisá el tramo)"
         events.append(ev)
         t_prev = g["t_last"]
 
