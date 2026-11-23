@@ -734,6 +734,7 @@ def export_dir_for(m, folder=""):
 
 
 REMUX = {}
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
 def remux_full(path):
@@ -759,7 +760,8 @@ def remux_full(path):
     def work():
         tmp = dest.with_suffix(".part.mp4")
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map", "0:v:0",
-               "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", str(tmp)]
+               "-map", "0:a:0?", "-c:v", "copy", "-af", LOUDNORM, "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
+               "-movflags", "+faststart", str(tmp)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True)
             tmp.replace(dest)
@@ -810,7 +812,9 @@ def copy_segment(video, out_dir, name, start, length, handle=SEG_HANDLE):
     dest = out_dir / f"{safe_name(name)}_{int(s0)}.mp4"
     if not dest.exists() or dest.stat().st_size < 10000:
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{s0:.3f}", "-i", str(video),
-               "-t", f"{dur:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+               "-t", f"{dur:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
+               # el audio llega muy bajo de la senal: se nivela aca (el video no se toca)
+               "-af", LOUDNORM, "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
                "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dest)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180, check=True)
@@ -847,6 +851,7 @@ def export_sequence(run_id, folder=""):
             seg = copy_segment(video, media, f"{c['id']}_{c['half']}", start, length)
             if seg:
                 it.update(seg)
+                it["gain"] = 1.0   # el pedazo ya trae el audio nivelado
         items.append(it)
     if not items:
         raise ValueError("No hay jugadas aprobadas")
