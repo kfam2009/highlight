@@ -733,6 +733,45 @@ def export_dir_for(m, folder=""):
     return out_dir
 
 
+REMUX = {}
+
+
+def remux_full(path):
+    """Partido completo en MP4 para Premiere (Premiere no abre MKV). Copia sin
+    recodificar: tarda lo que tarda copiar el archivo. Queda en la carpeta de
+    exportacion (no en la de partidos, para que no se analice de nuevo)."""
+    from .ffmpeg import ffmpeg_exe
+    src = Path(path)
+    if not src.exists():
+        return {"error": f"No existe {src}"}
+    cfg = load_config()
+    base = Path(cfg["export_dir"]).expanduser() if cfg.get("export_dir") else Path(cfg["data_dir"]) / "exportados"
+    out_dir = base / safe_name(src.stem)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / f"{src.stem} (completo).mp4"
+    key = str(src)
+    if REMUX.get(key, {}).get("status") == "copiando":
+        return REMUX[key]
+    REMUX[key] = {"status": "copiando", "file": str(dest)}
+
+    def work():
+        tmp = dest.with_suffix(".part.mp4")
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map", "0:v:0",
+               "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", str(tmp)]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True)
+            tmp.replace(dest)
+            REMUX[key] = {"status": "listo", "file": str(dest)}
+        except Exception as exc:
+            REMUX[key] = {"status": "error", "file": str(dest), "error": str(exc)}
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    threading.Thread(target=work, daemon=True).start()
+    return REMUX[key]
+
+
 SEG_HANDLE = 12.0   # segundos de mas a cada lado de cada jugada (para estirar en Premiere)
 
 
@@ -933,6 +972,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
                                                       body.get("range")))
+            if u.path == "/api/remux":
+                return self.send_json(remux_full(body["path"]))
             if u.path == "/api/update":
                 return self.send_json(self_update())
             if u.path == "/api/delete-run":
