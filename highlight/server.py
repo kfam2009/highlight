@@ -752,6 +752,8 @@ def remux_full(path):
     key = str(src)
     if REMUX.get(key, {}).get("status") == "copiando":
         return REMUX[key]
+    if dest.exists() and dest.stat().st_size > 0.9 * src.stat().st_size:
+        return {"status": "listo", "file": str(dest)}
     REMUX[key] = {"status": "copiando", "file": str(dest)}
 
     def work():
