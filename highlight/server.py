@@ -733,6 +733,33 @@ def export_dir_for(m, folder=""):
     return out_dir
 
 
+SEG_HANDLE = 12.0   # segundos de mas a cada lado de cada jugada (para estirar en Premiere)
+
+
+def copy_segment(video, out_dir, name, start, length, handle=SEG_HANDLE):
+    """Copia (sin recodificar) un pedazo del original a MP4 para Premiere.
+    Al copiar, el pedazo arranca en el cuadro clave anterior a start - handle:
+    se mide cuanto antes arranco por la duracion que salio."""
+    from .ffmpeg import ffmpeg_exe, probe_duration
+    out_dir.mkdir(parents=True, exist_ok=True)
+    s0 = max(0.0, start - handle)
+    dur = length + (start - s0) + handle
+    dest = out_dir / f"{safe_name(name)}_{int(s0)}.mp4"
+    if not dest.exists() or dest.stat().st_size < 10000:
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{s0:.3f}", "-i", str(video),
+               "-t", f"{dur:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+               "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dest)]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180, check=True)
+        except Exception:
+            return None
+    if not dest.exists() or dest.stat().st_size < 10000:
+        return None
+    got = probe_duration(dest) or dur
+    k = max(0.0, s0 - max(0.0, got - dur))   # donde arranca de verdad el pedazo en el original
+    return {"file": str(dest), "file_start": round(k, 3), "file_duration": got}
+
+
 def export_sequence(run_id, folder=""):
     """Secuencia XML para Premiere con los aprobados, apuntando al original."""
     from .premiere import build_sequence
@@ -743,17 +770,23 @@ def export_sequence(run_id, folder=""):
     if not video.exists():
         raise FileNotFoundError(f"No encuentro el video original: {video}")
     items = []
+    out_dir = export_dir_for(m, folder)
+    media = out_dir / "medios"
     for c in m["clips"]:
         d = dec.get(c["id"]) or {}
         if d.get("decision") != "approved":
             continue
         start, length = adjusted_window(c, d)
-        items.append({"start": start, "length": length, "gain": audio_gain(video, start, length),
-                      "title": f"{c['id']} {c['halfLabel']} - {c['title']}",
-                      "marker": " · ".join(x for x in [c["halfLabel"], c["title"], c.get("detail", "")] if x)})
+        it = {"start": start, "length": length, "gain": audio_gain(video, start, length),
+              "title": f"{c['id']} {c['halfLabel']} - {c['title']}",
+              "marker": " · ".join(x for x in [c["halfLabel"], c["title"], c.get("detail", "")] if x)}
+        if video.suffix.lower() not in (".mp4", ".mov"):
+            seg = copy_segment(video, media, f"{c['id']}_{c['half']}", start, length)
+            if seg:
+                it.update(seg)
+        items.append(it)
     if not items:
         raise ValueError("No hay jugadas aprobadas")
-    out_dir = export_dir_for(m, folder)
     name = f"Highlights {Path(m['videoName']).stem}"
     xml = build_sequence(name, video, items)
     dest = out_dir / f"{safe_name(Path(m['videoName']).stem)}_highlights.xml"

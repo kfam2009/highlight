@@ -1,8 +1,8 @@
 """Secuencia para Premiere (XML de Final Cut 7, que Premiere importa).
 
-Cada jugada aprobada es un clip que apunta al video ORIGINAL con su punto de
-entrada y salida: no se recorta ni se re-renderiza nada, y en Premiere se
-puede estirar cualquier corte porque el material completo esta ahi.
+Premiere no abre MKV (el formato de las grabaciones): por eso cada jugada
+aprobada se copia sin recodificar a un MP4 chico con unos segundos de mas a
+cada lado (para poder estirar el corte), y la secuencia apunta a esos MP4.
 En Premiere: Archivo > Importar > el .xml  -> aparece la secuencia armada.
 """
 import re
@@ -50,27 +50,39 @@ def path_url(p):
 
 
 def build_sequence(name, video, items, info=None):
-    """items: lista de dicts con start, length (segundos), title, marker."""
+    """items: lista de dicts con start, length (segundos), title, marker.
+    Si un item trae "file" (un pedazo del original) y "file_start" (en que
+    segundo del original empieza ese pedazo), el clip apunta a ese archivo."""
     info = info or probe_info(video)
     tb, ntsc, real = _rate(info["fps"])
     ntsc_s = "TRUE" if ntsc else "FALSE"
     fr = lambda s: int(round(float(s) * real))
-    file_frames = fr(info["duration"]) if info["duration"] else 10 ** 7
-    vname = escape(Path(video).name)
-    url = escape(path_url(video))
     rate = f"<rate><timebase>{tb}</timebase><ntsc>{ntsc_s}</ntsc></rate>"
 
-    file_full = f"""<file id="file-1"><name>{vname}</name><pathurl>{url}</pathurl>{rate}<duration>{file_frames}</duration>
+    files = {}   # ruta -> (id, frames)
+
+    def file_ref(path, dur_s):
+        key = str(path)
+        if key in files:
+            return f'<file id="{files[key][0]}"/>', files[key][1]
+        fid = f"file-{len(files) + 1}"
+        frames = fr(dur_s) if dur_s else 10 ** 7
+        files[key] = (fid, frames)
+        return (f"""<file id="{fid}"><name>{escape(Path(path).name)}</name><pathurl>{escape(path_url(path))}</pathurl>{rate}<duration>{frames}</duration>
 <media><video><samplecharacteristics>{rate}<width>{info['width']}</width><height>{info['height']}</height></samplecharacteristics></video>
-<audio><samplecharacteristics><depth>16</depth><samplerate>{info['sample_rate']}</samplerate></samplecharacteristics><channelcount>{info['channels']}</channelcount></audio></media></file>"""
+<audio><samplecharacteristics><depth>16</depth><samplerate>{info['sample_rate']}</samplerate></samplecharacteristics><channelcount>{info['channels']}</channelcount></audio></media></file>""",
+                frames)
 
     vclips, a1clips, a2clips = [], [], []
     pos = 0
     for k, it in enumerate(items, start=1):
-        cin = fr(it["start"])
+        src = it.get("file") or video
+        off = float(it.get("file_start") or 0.0) if it.get("file") else 0.0
+        fdef, file_frames = file_ref(src, it.get("file_duration") if it.get("file") else info["duration"])
+        fid = files[str(src)][0]
+        cin = max(0, fr(it["start"] - off))
         cout = cin + max(1, fr(it["length"]))
         end = pos + (cout - cin)
-        f = file_full if k == 1 else '<file id="file-1"/>'
         title = escape(it["title"])
         marker = f"<marker><name>{escape(it.get('marker') or it['title'])}</name><comment></comment><in>{cin}</in><out>-1</out></marker>"
         links = (f"<link><linkclipref>v{k}</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>{k}</clipindex></link>"
@@ -84,10 +96,10 @@ def build_sequence(name, video, items, info=None):
                  "<effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype>"
                  f"<parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin>"
                  f"<valuemax>3.98109</valuemax><value>{g:.4f}</value></parameter></effect></filter>")
-        vclips.append(f'<clipitem id="v{k}">{common}{f}{marker}{links}</clipitem>')
-        a1clips.append(f'<clipitem id="a{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>{level}{links}</clipitem>')
+        vclips.append(f'<clipitem id="v{k}">{common}{fdef}{marker}{links}</clipitem>')
+        a1clips.append(f'<clipitem id="a{k}">{common}<file id="{fid}"/><sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>{level}{links}</clipitem>')
         if info["channels"] == 2:
-            a2clips.append(f'<clipitem id="b{k}">{common}<file id="file-1"/><sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>{level}{links}</clipitem>')
+            a2clips.append(f'<clipitem id="b{k}">{common}<file id="{fid}"/><sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>{level}{links}</clipitem>')
         pos = end
 
     atracks = f"<track>{''.join(a1clips)}</track>" + (f"<track>{''.join(a2clips)}</track>" if a2clips else "")
