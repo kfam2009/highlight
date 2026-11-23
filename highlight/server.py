@@ -774,6 +774,28 @@ def remux_full(path):
     return REMUX[key]
 
 
+def export_range(path, start, end, name=""):
+    """Un tramo del partido recodificado a MP4 comun (lo abre cualquier editor)."""
+    src = Path(path)
+    cfg = load_config()
+    base = Path(cfg["export_dir"]).expanduser() if cfg.get("export_dir") else Path(cfg["data_dir"]) / "exportados"
+    out_dir = base / safe_name(src.stem)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / f"tramo_{int(start // 60):03d}m{int(start % 60):02d}s_{int(end // 60):03d}m{int(end % 60):02d}s{('_' + safe_name(name)) if name else ''}.mp4"
+    key = f"{src}|{start}|{end}"
+    if REMUX.get(key, {}).get("status") == "copiando":
+        return REMUX[key]
+    if dest.exists() and dest.stat().st_size > 1000:
+        return {"status": "listo", "file": str(dest)}
+    REMUX[key] = {"status": "copiando", "file": str(dest)}
+
+    def work():
+        ok = cut(src, dest, float(start), float(end) - float(start), mode="export")
+        REMUX[key] = {"status": "listo" if ok else "error", "file": str(dest)}
+    threading.Thread(target=work, daemon=True).start()
+    return REMUX[key]
+
+
 SEG_HANDLE = 12.0   # segundos de mas a cada lado de cada jugada (para estirar en Premiere)
 
 
@@ -974,6 +996,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
                                                       body.get("range")))
+            if u.path == "/api/export-range":
+                return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", "")))
             if u.path == "/api/remux":
                 return self.send_json(remux_full(body["path"]))
             if u.path == "/api/update":
