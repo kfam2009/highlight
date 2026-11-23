@@ -22,7 +22,7 @@ def cut(video, out_path, start, length, mode="preview"):
     pre = max(0.0, start - 5.0)
     offset = start - pre
     if mode == "export":
-        vargs = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+        vargs = ["-c:v", "libx264", "-preset", "superfast", "-crf", "20", "-pix_fmt", "yuv420p"]
         # audio al nivel normal de una transmision (la senal suele venir baja)
         aargs = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "160k"]
         timeout = max(120, min(900, int(length * 8)))
