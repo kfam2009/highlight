@@ -102,6 +102,23 @@ def next_game(fx, field, when=None, within_h=4.0):
     return None
 
 
+def game_after(fx, field, prev_title, within_h=6.0, when=None):
+    """El partido que sigue en esa cancha despues del que se llamaba
+    ``prev_title`` (aunque ya haya pasado su hora: los partidos se atrasan)."""
+    import time as _t
+    if not fx or not field or not prev_title:
+        return None
+    games = sorted((g for g in fx["games"] if g["field"] == field), key=lambda g: g["start"])
+    for i, g in enumerate(games):
+        if title(g) == prev_title:
+            nxt = games[i + 1] if i + 1 < len(games) else None
+            t = when or _t.time()
+            if nxt and nxt["start"] - t <= within_h * 3600 and t - nxt["start"] <= within_h * 3600:
+                return nxt
+            return None
+    return None
+
+
 def title(g):
     name = f"Gm {g['n']:02d} {g['away']} vs {g['home']}"
     return re.sub(r'[<>:"/\\|?*]+', "", name).strip()

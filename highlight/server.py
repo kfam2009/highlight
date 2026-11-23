@@ -391,8 +391,11 @@ def rec_action(name, action, adopt_state=None):
                 fx = fixture_mod.load(cfg.get("fixture"), fixture_edits_path())
                 g = None
                 if st and st.get("over"):
-                    # el partido anterior ya termino: el archivo nuevo es el proximo
-                    g = fixture_mod.next_game(fx, s2.get("field"), within_h=3.0)
+                    # el partido anterior ya termino: el archivo nuevo es el que
+                    # le sigue en el fixture (aunque ya sea la hora del otro,
+                    # porque los partidos se atrasan)
+                    g = fixture_mod.game_after(fx, s2.get("field"), st.get("title")) or \
+                        fixture_mod.next_game(fx, s2.get("field"), within_h=3.0)
                 g = g or fixture_mod.match(fx, s2.get("field"))
                 return fixture_mod.title(g) if g else None
 

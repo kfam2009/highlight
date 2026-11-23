@@ -369,7 +369,7 @@ class LiveSession:
         # previa (himnos y saludo): se busca una sola vez, cuando ya arranco el juego
         if self.pregame is None:
             t_first = ev_mod.first_scorebug_time(self.raw["present"], self.profile.fps)
-            if t_first is not None and (final or self.processed_s >= t_first + 30):
+            if final or (t_first is not None and self.processed_s >= t_first + 30):
                 try:
                     self.pregame = pregame(self.work, self.raw, self.profile.fps)
                 except Exception:

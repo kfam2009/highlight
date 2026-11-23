@@ -49,8 +49,8 @@ def pregame(work, raw, fps):
         pass
 
     t_first = ev_mod.first_scorebug_time(raw["present"], fps)
-    if t_first is None:
-        return []
+    # sin scorebug en todo el archivo (la señal arranco antes y se corto antes
+    # del juego): todo el archivo es previa
     samples, sr = load_audio_samples(work, max_s=t_first)
     if samples is None:
         return []
