@@ -62,7 +62,7 @@
       "set": "digits",
       "min_h": 12,
       "max_h": 30,
-      "max_err": 140
+      "max_err": 160
     }
   },
   "points": {

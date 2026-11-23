@@ -113,8 +113,15 @@ def fill_dips(seq, fps, max_s=40.0):
     return out
 
 
+def _stable_fields(raw):
+    # la entrada y la mitad cambian pocas veces por partido: un parpadeo de
+    # un par de segundos (replay, grafico que se acomoda) no cuenta
+    fps = raw.get("fps", 5)
+    return {k: stable(raw[k], minrun=int(5 * fps) if k in ("inning", "half") else 5) for k in ALL_FIELDS}
+
+
 def smooth_state(raw):
-    st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    st = _stable_fields(raw)
     for k in ("away", "home", "outs"):
         st[k] = fill_dips(st[k], raw.get("fps", 5))
     infer_innings(st)
@@ -700,7 +707,7 @@ def detect_game_over(raw, fps, regulation=7, absence_s=180.0, long_absence_s=900
     n = len(present)
     if n == 0:
         return None
-    st = {k: stable(raw[k]) for k in ALL_FIELDS}
+    st = _stable_fields(raw)
     for k in ("away", "home", "outs"):
         st[k] = fill_dips(st[k], fps)
     infer_innings(st)
