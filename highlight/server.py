@@ -309,9 +309,15 @@ def rec_action(name, action, adopt_state=None):
         return {"error": f"no hay una señal llamada {name}"}
     r = RECORDERS.get(name)
     if action in ("start", "monitor"):
+        was_recording = False
         if r and r.url != src["url"]:
+            # cambio la direccion de la senal: si estaba grabando, sigue
+            # grabando con la nueva (archivo nuevo, mismo partido)
+            was_recording = bool(r.record)
             r.stop()
             r = None
+            if was_recording:
+                action = "start"
         if not r or not (r.thread and r.thread.is_alive()):
             def game_over(session, over):
                 # fin del partido detectado en el scorebug: cerrar el archivo y
