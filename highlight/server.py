@@ -894,10 +894,12 @@ def merge_game(path, min_mb=5):
 
     def work():
         lst = dest.with_suffix(".txt")
-        tmp = dest.with_name(dest.stem + ".part.mkv")
+        # el temporal no termina en .mkv: si no, el modo en vivo lo toma por
+        # una grabacion y lo empieza a analizar (y en Windows no se puede renombrar)
+        tmp = dest.with_name(dest.name + ".tmp")
         lst.write_text("".join("file '" + str(f).replace("'", "'\\''") + "'\n" for f in parts), encoding="utf-8")
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
-               "-map", "0", "-c", "copy", str(tmp)]
+               "-map", "0", "-c", "copy", "-f", "matroska", str(tmp)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
