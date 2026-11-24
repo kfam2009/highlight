@@ -928,7 +928,7 @@ def merge_game(path, min_mb=5):
     return REMUX[key]
 
 
-def remux_full(path):
+def remux_full(path, fast=False):
     """Partido completo en MP4 para Premiere (Premiere no abre MKV). Copia sin
     recodificar: tarda lo que tarda copiar el archivo. Queda en la carpeta de
     exportacion (no en la de partidos, para que no se analice de nuevo)."""
@@ -940,8 +940,8 @@ def remux_full(path):
     base = Path(cfg["export_dir"]).expanduser() if cfg.get("export_dir") else Path(cfg["data_dir"]) / "exportados"
     out_dir = base / safe_name(src.stem)
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / f"{src.stem} (completo).mp4"
-    key = str(src)
+    dest = out_dir / (f"{src.stem.replace(' (completo)', '')} COMPLETO.mp4" if fast else f"{src.stem} (completo).mp4")
+    key = str(src) + ("|fast" if fast else "")
     if REMUX.get(key, {}).get("status") == "copiando":
         return REMUX[key]
     if dest.exists() and dest.stat().st_size > 0.9 * src.stat().st_size:
@@ -950,9 +950,10 @@ def remux_full(path):
 
     def work():
         tmp = dest.with_suffix(".part.mp4")
+        # fast: audio sin filtros (solo se copia): tarda lo que tarda copiar el archivo
+        acodec = ["-c:a", "copy"] if fast else ["-af", audio_chain(), "-ar", "48000", "-c:a", "aac", "-b:a", "192k"]
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map", "0:v:0",
-               "-map", "0:a:0?", "-c:v", "copy", "-af", audio_chain(), "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
-               "-movflags", "+faststart", str(tmp)]
+               "-map", "0:a:0?", "-c:v", "copy", *acodec, "-movflags", "+faststart", str(tmp)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True)
             tmp.replace(dest)
@@ -1219,7 +1220,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/merge":
                 return self.send_json(merge_game(body["path"]))
             if u.path == "/api/remux":
-                return self.send_json(remux_full(body["path"]))
+                return self.send_json(remux_full(body["path"], bool(body.get("fast"))))
             if u.path == "/api/update":
                 return self.send_json(self_update())
             if u.path == "/api/delete-run":
