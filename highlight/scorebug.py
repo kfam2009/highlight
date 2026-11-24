@@ -358,7 +358,7 @@ def read_scorebug_video(path, profile, progress=None, cache=None):
                 up, dn = c("arrow_up", 2), c("arrow_down", 2)
                 if up[1] > 70 and up[1] > up[2] + 15:
                     out["half"].append("T")
-                elif dn[2] > 90 and dn[2] > dn[1] + 40:
+                elif dn[2] > 50 and dn[2] > dn[1] + 35 and dn[2] > dn[0] + 25:
                     out["half"].append("B")
                 else:
                     out["half"].append(None)
