@@ -674,8 +674,20 @@ def watcher(period=30, settle_s=120):
             if cfg.get("auto_analyze"):
                 busy = {j["path"] for j in JOBS if j["status"] in ("en cola", "analizando")}
                 busy |= {p for p, ss in LIVE.items() if not (ss.finished or ss.status == "error")}
-                for v in scan_videos():
+                vids = scan_videos()
+                # partidos ya juntados: sus partes sueltas no se analizan mas
+                joined = {re.match(r"(Gm \d+) ", x["name"]).group(1) for x in vids
+                          if "(completo)" in x["name"] and re.match(r"Gm \d+ ", x["name"])}
+                for v in vids:
                     if v.get("runId") or v["path"] in busy or v["path"] in _AUTO_FAILED:
+                        continue
+                    g = re.match(r"(Gm \d+) ", v["name"])
+                    if g and g.group(1) in joined and "(completo)" not in v["name"]:
+                        continue
+                    if "(completo)" in v["name"]:
+                        # un archivo juntado ya esta entero: analisis normal, no en vivo
+                        if v["path"] not in LIVE and time.time() - v["modified"] > 30:
+                            enqueue(v["path"], cfg.get("default_profile") or "auto", auto=True)
                         continue
                     if cfg.get("live_mode") and time.time() - v["modified"] < 60 and v["path"] not in LIVE:
                         # se esta grabando: analizar en vivo
@@ -700,6 +712,8 @@ def watcher(period=30, settle_s=120):
 def worker():
     while True:
         job = JOB_Q.get()
+        if job.get("status") == "cancelado":
+            continue
         job["status"] = "analizando"
         job["started"] = time.time()
 
@@ -1153,6 +1167,13 @@ class Handler(BaseHTTPRequestHandler):
                 if "srt_sources" in body:
                     threading.Thread(target=ensure_monitors, daemon=True).start()
                 return self.send_json(cfg)
+            if u.path == "/api/job-cancel":
+                n = 0
+                for j in JOBS:
+                    if j["status"] == "en cola" and (j["id"] == body.get("id") or body.get("all")):
+                        j["status"] = "cancelado"
+                        n += 1
+                return self.send_json({"cancelled": n})
             if u.path == "/api/queue":
                 profile = body.get("profile") or load_config()["default_profile"]
                 jobs = [enqueue(p, profile) for p in body.get("paths", [])]
