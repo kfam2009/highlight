@@ -317,6 +317,11 @@ def rec_action(name, action, adopt_state=None):
                 # fin del partido detectado en el scorebug: cerrar el archivo y
                 # seguir con el proximo partido en uno nuevo
                 rec = RECORDERS.get(name)
+                # sin ninguna jugada todavia (previa, o la senal arranco antes del
+                # juego) no es un fin de partido: no se corta ni cambia el nombre
+                started = any(not str(k).startswith("PRE|") for k in getattr(session, "ids", {}))
+                if not started:
+                    return
                 if rec and load_config().get("auto_cut", True) and rec.file and \
                         Path(rec.file).resolve() == session.video:
                     why = {"fin": "fin del partido", "nuevo partido": "empezó otro partido",
