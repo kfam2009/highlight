@@ -140,6 +140,9 @@
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
         <input type="checkbox" id="previaOn" style="width:auto"> <span>Buscar himnos y saludo antes del partido</span>
       </label>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px">
+        <input type="checkbox" id="denoiseOn" style="width:auto"> <span>Sacar el ruido de fondo del audio al exportar</span>
+      </label>
     </div>
     <div class="box">
       <h3>Juegos grabados <button class="small" id="refreshVideos">Buscar</button></h3>
@@ -210,6 +213,7 @@ async function loadConfig() {
   $('#autoXml').checked = state.config.auto_xml !== false;
   $('#liveOn').checked = !!state.config.live_mode;
   $('#previaOn').checked = state.config.previa !== false;
+  $('#denoiseOn').checked = !!state.config.denoise;
   const srcs = state.config.srt_sources || [];
   [1, 2].forEach(i => { const x = srcs[i - 1]; $('#srtName' + i).value = x ? x.name : 'Campo ' + i; $('#srtUrl' + i).value = x ? x.url : ''; });
   await loadFixture();
@@ -804,6 +808,7 @@ $('#autoAt').onchange = async () => { state.config = await api('/api/config', { 
 $('#stopAt').onchange = async () => { state.config = await api('/api/config', { rec_stop_at: $('#stopAt').value }); toast($('#stopAt').value ? `Se para todo a las ${$('#stopAt').value}` : 'Sin parada automática'); };
 $('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
+$('#denoiseOn').onchange = async () => { state.config = await api('/api/config', { denoise: $('#denoiseOn').checked }); toast($('#denoiseOn').checked ? 'Al exportar se saca el ruido de fondo' : 'Audio sin filtro de ruido'); };
 $('#previaOn').onchange = async () => { state.config = await api('/api/config', { previa: $('#previaOn').checked }); toast($('#previaOn').checked ? 'Se buscan himnos y saludo' : 'Sin himnos ni saludo'); };
 $('#addFolder').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20grabaciones'); if (r.folder) $('#folders').value = ($('#folders').value.trim() + '\n' + r.folder).trim(); };
 $('#browseExport').onclick = async () => { const r = await api('/api/browse-folder?title=Carpeta%20de%20exportacion'); if (r.folder) $('#exportDir').value = r.folder; };

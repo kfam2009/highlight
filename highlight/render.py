@@ -16,6 +16,21 @@ def safe_name(value):
     return value[:80] or "video"
 
 
+LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
+# ruido de fondo de la senal (zumbido grave + soplido constante): se saca
+# antes de nivelar. Solo al exportar; la grabacion queda como vino.
+DENOISE = "highpass=f=90,afftdn=nf=-30:nr=15"
+
+
+def audio_chain():
+    try:
+        from .server import load_config
+        on = bool(load_config().get("denoise", False))
+    except Exception:
+        on = False
+    return (DENOISE + "," + LOUDNORM) if on else LOUDNORM
+
+
 def cut(video, out_path, start, length, mode="preview"):
     start = max(0.0, float(start))
     length = max(0.5, float(length))
@@ -24,7 +39,7 @@ def cut(video, out_path, start, length, mode="preview"):
     if mode == "export":
         vargs = ["-c:v", "libx264", "-preset", "superfast", "-crf", "20", "-pix_fmt", "yuv420p"]
         # audio al nivel normal de una transmision (la senal suele venir baja)
-        aargs = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000", "-c:a", "aac", "-b:a", "160k"]
+        aargs = ["-af", audio_chain(), "-ar", "48000", "-c:a", "aac", "-b:a", "160k"]
         timeout = max(120, min(900, int(length * 8)))
     else:
         vargs = ["-vf", "scale=-2:720", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-pix_fmt", "yuv420p"]

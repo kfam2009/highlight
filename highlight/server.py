@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .analyze import analyze
-from .render import adjusted_window, audio_gain, cut, safe_name
+from .render import adjusted_window, audio_chain, audio_gain, cut, safe_name
 from .scorebug import list_profiles
 from . import fixture as fixture_mod
 
@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     "rec_stop_at": "03:00",          # "HH:MM": parar todas las grabaciones (por las dudas, de noche)
     "stop_after_last": True,         # termino el ultimo partido del dia en esa cancha: parar en vez de seguir
     "previa": True,                  # buscar himnos y saludo antes del primer lanzamiento
+    "denoise": False,                # sacar el ruido de fondo del audio al exportar
     "fixture": "u18_panam_2026.json",  # nombres de los partidos (highlight/fixtures/)
 }
 
@@ -834,7 +835,7 @@ def remux_full(path):
     def work():
         tmp = dest.with_suffix(".part.mp4")
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map", "0:v:0",
-               "-map", "0:a:0?", "-c:v", "copy", "-af", LOUDNORM, "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
+               "-map", "0:a:0?", "-c:v", "copy", "-af", audio_chain(), "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
                "-movflags", "+faststart", str(tmp)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True)
@@ -888,7 +889,7 @@ def copy_segment(video, out_dir, name, start, length, handle=SEG_HANDLE):
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{s0:.3f}", "-i", str(video),
                "-t", f"{dur:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
                # el audio llega muy bajo de la senal: se nivela aca (el video no se toca)
-               "-af", LOUDNORM, "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
+               "-af", audio_chain(), "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
                "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dest)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180, check=True)
@@ -1041,7 +1042,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut", "fixture", "previa", "rec_auto_at", "rec_stop_at", "stop_after_last"):
+                          "srt_sources", "auto_cut", "fixture", "previa", "denoise", "rec_auto_at", "rec_stop_at", "stop_after_last"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
