@@ -17,9 +17,10 @@ def safe_name(value):
 
 
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
-# ruido de fondo de la senal (zumbido grave + soplido constante): se saca
+# ruido de fondo de la senal: zumbido grave constante (en el campo 2 medido
+# en 44 Hz, +22 dB) y soplido. Se saca
 # antes de nivelar. Solo al exportar; la grabacion queda como vino.
-DENOISE = "highpass=f=90,afftdn=nf=-30:nr=15"
+DENOISE = "highpass=f=100,highpass=f=100,bandreject=f=44:width_type=h:w=8,bandreject=f=88:width_type=h:w=8,afftdn=nf=-30:nr=15"
 
 
 def audio_chain():
