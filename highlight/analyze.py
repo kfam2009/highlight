@@ -319,6 +319,11 @@ def analyze(video, runs_dir, profile_name="on_softball", on_progress=None, rende
 
         if picked:
             crop, loc_info = picked
+        elif profile_name not in (None, "", "auto"):
+            # perfil elegido a mano: el grafico esta donde dice el perfil (igual
+            # que en vivo). Buscarlo saltando por todo el video es lentisimo en
+            # los MKV grabados en vivo (sin indice)
+            crop, loc_info = None, {"status": "posicion del perfil"}
         else:
             prog("extraer", 0, "Buscando el scorebug en la imagen")
             crop, loc_info = locate(video, profile, duration)
