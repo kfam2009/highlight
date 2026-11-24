@@ -298,7 +298,7 @@ def rec_infos():
         out.append(info)
     cfg = load_config()
     return {"sources": out, "srtOk": _SRT_OK, "autoCut": cfg.get("auto_cut", True),
-            "autoAt": cfg.get("rec_auto_at", ""), "stopAt": cfg.get("rec_stop_at", ""), "autoAtDone": _AUTO_REC_DONE.get("day") == f"{time.strftime('%Y-%m-%d')} {cfg.get('rec_auto_at', '')}"}
+            "autoAt": cfg.get("rec_auto_at", ""), "stopAt": cfg.get("rec_stop_at", ""), "shutdown": bool(cfg.get("shutdown_after_stop")), "autoAtDone": _AUTO_REC_DONE.get("day") == f"{time.strftime('%Y-%m-%d')} {cfg.get('rec_auto_at', '')}"}
 
 
 def rec_action(name, action, adopt_state=None):
@@ -557,6 +557,46 @@ _AUTO_REC_DONE = {}
 _AUTO_STOP_DONE = {}
 
 
+SHUTDOWN = {"pending": False}
+
+
+def _busy():
+    """Que sigue trabajando: grabaciones, analisis, exportaciones."""
+    if any(r.record for r in RECORDERS.values()):
+        return "grabando"
+    if any(j["status"] in ("en cola", "analizando") for j in JOBS):
+        return "analizando"
+    if any(not ps.finished for ps in LIVE.values()):
+        return "cerrando análisis en vivo"
+    if any(v.get("status") == "copiando" for v in REMUX.values()):
+        return "exportando"
+    return None
+
+
+def shutdown_when_idle(max_wait_min=60, grace_s=300):
+    """Despues de parar todo: espera que terminen los analisis y las
+    exportaciones (hasta 1 hora) y apaga la PC con 5 minutos de aviso
+    (se cancela destildando la opcion en el panel o con 'shutdown /a')."""
+    t0 = time.time()
+    while _busy() and time.time() - t0 < max_wait_min * 60:
+        time.sleep(15)
+    if not load_config().get("shutdown_after_stop") or _busy():
+        print(f"Apagado automático cancelado ({_busy() or 'opción destildada'})")
+        return
+    print("Apagado automático: la PC se apaga en 5 minutos")
+    if os.name == "nt":
+        subprocess.run(["shutdown", "/s", "/t", str(grace_s), "/c",
+                        "Highlights: terminó todo, la PC se apaga en 5 minutos. Para cancelar: destildá 'Apagar la PC' en el panel."],
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        SHUTDOWN["pending"] = True
+
+
+def cancel_shutdown():
+    if os.name == "nt" and SHUTDOWN.get("pending"):
+        subprocess.run(["shutdown", "/a"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    SHUTDOWN["pending"] = False
+
+
 def rec_scheduler(period=20, window_min=30):
     """Grabar solo a una hora fija (rec_auto_at, hora de la PC): a esa hora se
     ponen a grabar todos los campos que no esten grabando. Una vez por dia;
@@ -595,6 +635,8 @@ def rec_scheduler(period=20, window_min=30):
                                 rec_action(nm, "stop")
                             except Exception:
                                 traceback.print_exc()
+                    if load_config().get("shutdown_after_stop"):
+                        threading.Thread(target=shutdown_when_idle, daemon=True).start()
         except Exception:
             traceback.print_exc()
         time.sleep(period)
@@ -1042,10 +1084,12 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 for k in ("video_folders", "data_dir", "export_dir", "default_profile",
                           "auto_analyze", "auto_approve", "auto_xml", "live_mode", "min_size_mb",
-                          "srt_sources", "auto_cut", "fixture", "previa", "denoise", "rec_auto_at", "rec_stop_at", "stop_after_last"):
+                          "srt_sources", "auto_cut", "fixture", "previa", "denoise", "shutdown_after_stop", "rec_auto_at", "rec_stop_at", "stop_after_last"):
                     if k in body:
                         cfg[k] = body[k]
                 save_config(cfg)
+                if body.get("shutdown_after_stop") is False:
+                    cancel_shutdown()
                 if "srt_sources" in body:
                     threading.Thread(target=ensure_monitors, daemon=True).start()
                 return self.send_json(cfg)

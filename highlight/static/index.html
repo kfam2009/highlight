@@ -117,6 +117,9 @@
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin-top:6px">
         <span>Parar todo a las</span> <input type="time" id="stopAt" style="width:auto"> <span class="muted">(por las dudas; después del último partido del día se para solo)</span>
       </label>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin-top:6px">
+        <input type="checkbox" id="shutdownOn" style="width:auto"> <span>Apagar la PC después de parar todo</span> <span class="muted">(espera que terminen los análisis y exportaciones; avisa 5 minutos antes)</span>
+      </label>
       <div class="muted" id="recNote" style="margin-top:6px">Graba la señal tal cual llega (sin recodificar) en la carpeta de partidos y la analiza en vivo. Cuando termina un partido lo cierra y sigue con el próximo en un archivo nuevo. <b>Cortar juego</b> hace lo mismo a mano.</div>
     </div>
     <div class="box" id="autoBox">
@@ -425,6 +428,7 @@ async function pollRec() {
   $('#autoCut').checked = r.autoCut !== false;
   if (document.activeElement !== $('#autoAt')) $('#autoAt').value = r.autoAt || '';
   if (document.activeElement !== $('#stopAt')) $('#stopAt').value = r.stopAt || '';
+  $('#shutdownOn').checked = !!r.shutdown;
   $('#autoAtNote').textContent = r.autoAt ? (r.autoAtDone ? '(hoy ya arrancó)' : '(todos los días, hora de esta PC)') : '';
   const color = { grabando: 'err', monitor: 'ok', conectando: 'run', 'sin señal': 'run', error: 'err', detenido: '' };
   if (r.sources.length) $('#recList').innerHTML = (r.srtOk ? '' : '<div class="muted" style="color:var(--bad,#f87171)">Falta un ffmpeg con SRT. Abrí PowerShell, escribí <code>winget install Gyan.FFmpeg</code> y reiniciá el panel.</div>') + r.sources.map(x => {
@@ -805,6 +809,7 @@ $('#selfUpdate').onclick = async () => {
   b.disabled = false; b.textContent = 'Actualizar';
 };
 $('#autoAt').onchange = async () => { state.config = await api('/api/config', { rec_auto_at: $('#autoAt').value }); toast($('#autoAt').value ? `Empieza a grabar solo a las ${$('#autoAt').value}` : 'Grabación automática apagada'); };
+$('#shutdownOn').onchange = async () => { state.config = await api('/api/config', { shutdown_after_stop: $('#shutdownOn').checked }); toast($('#shutdownOn').checked ? 'Después de parar todo se apaga la PC' : 'La PC queda prendida (apagado cancelado)'); };
 $('#stopAt').onchange = async () => { state.config = await api('/api/config', { rec_stop_at: $('#stopAt').value }); toast($('#stopAt').value ? `Se para todo a las ${$('#stopAt').value}` : 'Sin parada automática'); };
 $('#autoCut').onchange = async () => { state.config = await api('/api/config', { auto_cut: $('#autoCut').checked }); toast($('#autoCut').checked ? 'Los partidos se separan solos' : 'Separar a mano con Cortar juego'); };
 ['#autoOn', '#autoApprove', '#autoXml', '#liveOn'].forEach(id => $(id).onchange = saveAuto);
