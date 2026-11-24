@@ -967,14 +967,24 @@ def remux_full(path):
     return REMUX[key]
 
 
-def export_range(path, start, end, name=""):
-    """Un tramo del partido recodificado a MP4 comun (lo abre cualquier editor)."""
+def export_range(path, start, end, name="", folder=""):
+    """Un tramo del partido recodificado a MP4 comun (lo abre cualquier editor).
+    Con folder: todo directo en esa carpeta y el nombre adelante (asi quedan
+    en orden aunque el partido este en varias partes)."""
     src = Path(path)
     cfg = load_config()
     base = Path(cfg["export_dir"]).expanduser() if cfg.get("export_dir") else Path(cfg["data_dir"]) / "exportados"
-    out_dir = base / safe_name(src.stem)
+    if folder:
+        out_dir = Path(folder).expanduser()
+        if not out_dir.is_absolute():
+            out_dir = base / safe_name(folder)
+        stamp = f"{int(start // 60):03d}m{int(start % 60):02d}s"
+        fname = f"{safe_name(name)}_{stamp}.mp4" if name else f"tramo_{safe_name(src.stem)}_{stamp}.mp4"
+    else:
+        out_dir = base / safe_name(src.stem)
+        fname = f"tramo_{int(start // 60):03d}m{int(start % 60):02d}s_{int(end // 60):03d}m{int(end % 60):02d}s{('_' + safe_name(name)) if name else ''}.mp4"
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / f"tramo_{int(start // 60):03d}m{int(start % 60):02d}s_{int(end // 60):03d}m{int(end % 60):02d}s{('_' + safe_name(name)) if name else ''}.mp4"
+    dest = out_dir / fname
     key = f"{src}|{start}|{end}"
     if REMUX.get(key, {}).get("status") == "copiando":
         return REMUX[key]
@@ -1205,7 +1215,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/subset":
                 return self.send_json(subset_run(body["runId"], body.get("types") or ["carrera"], body.get("label", "")))
             if u.path == "/api/export-range":
-                return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", "")))
+                return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", ""), body.get("folder", "")))
             if u.path == "/api/merge":
                 return self.send_json(merge_game(body["path"]))
             if u.path == "/api/remux":
