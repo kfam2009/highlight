@@ -879,7 +879,7 @@ REMUX = {}
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
-def merge_game(path, min_mb=5):
+def merge_game(path, min_mb=5, mp4=False):
     """Junta todas las partes de un partido (los archivos 'Gm NN ...' de la
     misma carpeta, en el orden en que se grabaron) en un solo MKV sin
     recodificar: '<partido> (completo).mkv'. Las partes no se tocan."""
@@ -898,7 +898,15 @@ def merge_game(path, min_mb=5):
     if len(parts) < 2:
         return {"error": "Ese partido tiene una sola parte"}
     title = re.sub(r" parte \d+$", "", parts[-1].stem)
-    dest = src.parent / f"{title} (completo).mkv"
+    if mp4:
+        # directo a MP4 para Premiere, en exportados (no se vuelve a analizar)
+        cfg = load_config()
+        base = Path(cfg["export_dir"]).expanduser() if cfg.get("export_dir") else Path(cfg["data_dir"]) / "exportados"
+        out_dir = base / safe_name(title + " completo")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / f"{title} COMPLETO desde partes.mp4"
+    else:
+        dest = src.parent / f"{title} (completo).mkv"
     key = "merge|" + str(dest)
     if REMUX.get(key, {}).get("status") == "copiando":
         return REMUX[key]
@@ -913,7 +921,8 @@ def merge_game(path, min_mb=5):
         tmp = dest.with_name(dest.name + ".tmp")
         lst.write_text("".join("file '" + str(f).replace("'", "'\\''") + "'\n" for f in parts), encoding="utf-8")
         cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
-               "-map", "0", "-c", "copy", "-f", "matroska", str(tmp)]
+               *(["-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", "-f", "mp4"] if mp4
+                 else ["-map", "0", "-c", "copy", "-f", "matroska"]), str(tmp)]
         try:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -1218,7 +1227,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/export-range":
                 return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", ""), body.get("folder", "")))
             if u.path == "/api/merge":
-                return self.send_json(merge_game(body["path"]))
+                return self.send_json(merge_game(body["path"], mp4=bool(body.get("mp4"))))
             if u.path == "/api/remux":
                 return self.send_json(remux_full(body["path"], bool(body.get("fast"))))
             if u.path == "/api/update":
