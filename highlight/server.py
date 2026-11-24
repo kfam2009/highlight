@@ -865,6 +865,53 @@ REMUX = {}
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
+def merge_game(path, min_mb=5):
+    """Junta todas las partes de un partido (los archivos 'Gm NN ...' de la
+    misma carpeta, en el orden en que se grabaron) en un solo MKV sin
+    recodificar: '<partido> (completo).mkv'. Las partes no se tocan."""
+    from .ffmpeg import ffmpeg_exe
+    src = Path(path)
+    g = re.match(r"(Gm \d+)\b", src.stem)
+    if not g:
+        return {"error": "El nombre no empieza con 'Gm NN'"}
+    prefix = g.group(1) + " "
+    parts = sorted((f for f in src.parent.iterdir()
+                    if f.is_file() and f.suffix.lower() == ".mkv" and f.name.startswith(prefix)
+                    and "(completo)" not in f.name and f.stat().st_size > min_mb * 1048576),
+                   key=lambda f: f.stat().st_mtime)
+    if any(time.time() - f.stat().st_mtime < 20 for f in parts):
+        return {"error": "Todavía se está grabando una parte de este partido"}
+    if len(parts) < 2:
+        return {"error": "Ese partido tiene una sola parte"}
+    title = re.sub(r" parte \d+$", "", parts[-1].stem)
+    dest = src.parent / f"{title} (completo).mkv"
+    key = "merge|" + str(dest)
+    if REMUX.get(key, {}).get("status") == "copiando":
+        return REMUX[key]
+    if dest.exists():
+        return {"status": "listo", "file": str(dest), "parts": len(parts)}
+    REMUX[key] = {"status": "copiando", "file": str(dest), "parts": len(parts)}
+
+    def work():
+        lst = dest.with_suffix(".txt")
+        tmp = dest.with_name(dest.stem + ".part.mkv")
+        lst.write_text("".join("file '" + str(f).replace("'", "'\\''") + "'\n" for f in parts), encoding="utf-8")
+        cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
+               "-map", "0", "-c", "copy", str(tmp)]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600, check=True,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            tmp.replace(dest)
+            REMUX[key] = {"status": "listo", "file": str(dest), "parts": len(parts)}
+        except Exception as exc:
+            REMUX[key] = {"status": "error", "file": str(dest), "error": str(exc)}
+            tmp.unlink(missing_ok=True)
+        finally:
+            lst.unlink(missing_ok=True)
+    threading.Thread(target=work, daemon=True).start()
+    return REMUX[key]
+
+
 def remux_full(path):
     """Partido completo en MP4 para Premiere (Premiere no abre MKV). Copia sin
     recodificar: tarda lo que tarda copiar el archivo. Queda en la carpeta de
@@ -1136,6 +1183,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(subset_run(body["runId"], body.get("types") or ["carrera"], body.get("label", "")))
             if u.path == "/api/export-range":
                 return self.send_json(export_range(body["path"], float(body["start"]), float(body["end"]), body.get("name", "")))
+            if u.path == "/api/merge":
+                return self.send_json(merge_game(body["path"]))
             if u.path == "/api/remux":
                 return self.send_json(remux_full(body["path"]))
             if u.path == "/api/update":

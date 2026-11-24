@@ -252,8 +252,13 @@ async function loadVideos() {
     <div class="item" title="${esc(v.path)}">
       <input type="checkbox" data-path="${esc(v.path)}" ${state.selected.has(v.path) ? 'checked' : ''} ${v.recording ? 'disabled' : ''} style="width:auto">
       <div><div class="name">${esc(v.name)}</div><div class="muted">${(v.sizeMb / 1024).toFixed(1)} GB · ${new Date(v.modified * 1000).toLocaleString()}</div></div>
-      <div style="display:flex;gap:4px">${!v.recording && /\.mkv$/i.test(v.name) ? `<button class="small" data-mp4="${esc(v.path)}" title="Partido completo en MP4 para Premiere (Premiere no abre MKV)">MP4</button>` : ''}${v.runId ? `<button class="small" data-open="${esc(v.runId)}">Abrir</button>` : v.recording ? `<button class="small" data-live="${esc(v.path)}" title="Analizar mientras se graba">En vivo</button>` : ''}</div>
+      <div style="display:flex;gap:4px">${!v.recording && /^Gm \d+ /.test(v.name) && !/\(completo\)/.test(v.name) && videos.filter(o => o.name.split(' ').slice(0, 2).join(' ') === v.name.split(' ').slice(0, 2).join(' ')).length > 1 ? `<button class="small" data-merge="${esc(v.path)}" title="Junta todas las partes de este partido en un solo archivo (después se analiza entero)">Juntar</button>` : ''}${!v.recording && /\.mkv$/i.test(v.name) ? `<button class="small" data-mp4="${esc(v.path)}" title="Partido completo en MP4 para Premiere (Premiere no abre MKV)">MP4</button>` : ''}${v.runId ? `<button class="small" data-open="${esc(v.runId)}">Abrir</button>` : v.recording ? `<button class="small" data-live="${esc(v.path)}" title="Analizar mientras se graba">En vivo</button>` : ''}</div>
     </div>`).join('');
+  $$('[data-merge]', el).forEach(b => b.onclick = async () => {
+    const r = await api('/api/merge', { path: b.dataset.merge });
+    if (r.error) return toast('No se pudo: ' + r.error);
+    toast(r.status === 'listo' ? 'Ya estaba junto: ' + r.file : `Juntando ${r.parts} partes (unos minutos). Queda en: ` + r.file);
+  });
   $$('[data-mp4]', el).forEach(b => b.onclick = async () => {
     const r = await api('/api/remux', { path: b.dataset.mp4 });
     if (r.error) return toast('No se pudo: ' + r.error);
