@@ -344,14 +344,16 @@ class Recorder:
                 self.on_new_file(str(path))
             except Exception:
                 pass
-        n = 0
+        n, dead = 0, 0
         while not self._stop.is_set() and not self._cut.is_set():
             if self.record is not True:
                 self._cut.set()
                 break
             n += 1
-            if n % 3 == 0 and not _is_ffmpeg(self.adopted_pid):
-                break
+            if n % 3 == 0:
+                dead = 0 if _is_ffmpeg(self.adopted_pid, unknown=True) else dead + 1
+                if dead >= 3:
+                    break
             time.sleep(1)
         if self._cut.is_set() or self._stop.is_set():
             _kill_pid(self.adopted_pid)
@@ -425,6 +427,7 @@ class Recorder:
             if self.status != "sin señal":
                 self.status, self.message = "conectando", "Esperando la señal"
             t0 = time.time()
+            kill_other_recorders(self.url)
             try:
                 errf = tempfile.TemporaryFile()
                 # en Windows, sin consola propia: si se cierra la ventana del
@@ -574,12 +577,49 @@ def kill_orphans(pid_dir, keep=()):
             pass
 
 
-def _is_ffmpeg(pid):
+def _is_ffmpeg(pid, unknown=False):
+    """unknown: que devolver si no se puede saber (tasklist que no responde con
+    la PC cargada). Para seguir esperando a un ffmpeg retomado conviene True:
+    darlo por muerto sin estarlo dejaba dos grabaciones del mismo campo."""
     try:
         if os.name == "nt":
             out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
                                  capture_output=True, text=True, timeout=15).stdout.lower()
+            if not out.strip():
+                return unknown
             return "ffmpeg" in out
         return b"ffmpeg" in Path(f"/proc/{pid}/cmdline").read_bytes()
-    except Exception:
+    except FileNotFoundError:
         return False
+    except Exception:
+        return unknown
+
+
+def _stream_key(url):
+    """Lo que identifica la senal de un campo dentro de la linea de comandos."""
+    m = re.search(r"(live_[0-9a-fA-F]{8,})", url or "") or re.search(r"streamid=([^&,]+)", url or "")
+    return m.group(1) if m else (url or "").split("?")[0]
+
+
+def kill_other_recorders(url, keep=()):
+    """Antes de conectar un campo: cerrar cualquier otro ffmpeg que este
+    tomando la misma senal (grabaciones sueltas de un reinicio del panel).
+    Un solo ffmpeg por campo: si no, quedan dos grabando a la vez, la PC se
+    carga y la del panel se corta una y otra vez."""
+    if os.name != "nt" or not url:
+        return
+    key = _stream_key(url).replace("'", "''")
+    if not key:
+        return
+    keep_ps = ",".join(str(int(k)) for k in keep if k) or "0"
+    cmd = ("Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | "
+           f"Where-Object {{ $_.CommandLine -like '*{key}*' -and @({keep_ps}) -notcontains $_.ProcessId }} | "
+           "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
+                             capture_output=True, text=True, timeout=40,
+                             creationflags=0x08000000).stdout.split()
+        if out:
+            print(f"Cerré grabaciones sueltas de la misma señal: {', '.join(out)}")
+    except Exception:
+        pass
