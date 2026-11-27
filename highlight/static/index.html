@@ -89,6 +89,10 @@
   .toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; display: none; max-width: 420px; }
   details summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; }
   .kbd { font-size: 11px; color: var(--muted); }
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:50}
+.modal .box{width:min(1100px,96vw);max-height:96vh;overflow:auto}
+.modal video{width:100%;max-height:62vh;background:#000;border-radius:6px}
+.modal .row{flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -192,7 +196,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const state = { run: null, decisions: {}, selected: new Set(), focus: null, config: null };
-const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar', final: 'Final' };
+const TYPE_NAMES = { carrera: 'Carrera', hit: 'Hit / avance', doble_play: 'Doble play', tercer_out: '3er out', out: 'Out', ponche: 'Posible ponche', base_por_bolas: 'Base por bolas', otro: 'Cambio', revisar: 'Revisar', final: 'Final', manual: 'Agregada' };
 const TIMING = { mph: 'pitch ubicado por MPH', audio: 'pitch ubicado por audio', margen: 'pitch estimado (revisar)', tramo: 'tramo completo', final: 'cierre del partido', conteo: 'desde el último cambio de conteo' };
 
 async function api(path, body) {
@@ -460,17 +464,18 @@ async function pollRec() {
 let jobsTimer = null;
 async function pollJobs() {
   const { jobs } = await api('/api/jobs');
-  const active = jobs.filter(j => j.live || j.status === 'en cola' || j.status === 'analizando' || (Date.now() / 1000 - (j.finished || 0)) < 600);
+  const active = jobs.filter(j => j.live || j.status === 'en cola' || j.status === 'analizando' || j.status === 'exportando' || (Date.now() / 1000 - (j.finished || 0)) < 600);
   $('#jobsBox').style.display = active.length ? '' : 'none';
   $('#jobs').innerHTML = active.map(j => `
     <div class="item" style="grid-template-columns:1fr auto">
       <div><div class="name">${j.live && !j.finished ? '<span class="tag err">● en vivo</span> ' : j.auto ? '<span class="tag ok">auto</span> ' : ''}${esc(j.name)}</div>
         <div class="muted">${esc(j.error || j.message || j.status)}</div>
-        ${j.status === 'analizando' ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>` : ''}</div>
-      <div>${(j.status === 'listo' || (j.live && j.runId)) ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
+        ${(j.status === 'analizando' || j.status === 'exportando') ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>` : ''}</div>
+      <div>${j.kind === 'export' ? `<span class="tag ${j.status === 'error' ? 'err' : j.status === 'listo' ? 'ok' : 'run'}">${j.status === 'exportando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`
+        : (j.status === 'listo' || (j.live && j.runId)) ? `<button class="small" data-open="${esc(j.runId)}">Abrir</button>` : `<span class="tag ${j.status === 'error' ? 'err' : 'run'}">${j.status === 'analizando' ? Math.round(j.progress * 100) + '%' : esc(j.status)}</span>`}</div>
     </div>`).join('');
   $$('[data-open]', $('#jobs')).forEach(b => b.onclick = () => openRun(b.dataset.open));
-  const busy = jobs.some(j => j.status === 'en cola' || j.status === 'analizando' || (j.live && !j.finished));
+  const busy = jobs.some(j => j.status === 'en cola' || j.status === 'analizando' || j.status === 'exportando' || (j.live && !j.finished));
   if (state._busy && !busy) { loadRuns(); loadVideos(); }
   state._busy = busy;
   clearTimeout(jobsTimer); jobsTimer = setTimeout(pollJobs, busy ? 1500 : 6000);
@@ -639,6 +644,7 @@ function cardHtml(c) {
         <button class="small" data-more="10">Alargar 10 s después ▶</button>
         <button class="small" data-reset title="Volver al corte que sugirió el panel">Original</button>
       </div>` : ''}
+      <div class="row io"><button class="small" data-around title="El video original alrededor de esta jugada, sin esperar: para buscar lo que falta o correr el clip">🔎 Ver alrededor</button></div>
       <div class="row actions">
         <button data-act="approved" class="${d.decision === 'approved' ? 'primary' : ''}">Aprobar</button>
         <button data-act="rejected" class="danger">Descartar</button>
@@ -706,6 +712,7 @@ function bindCard(el) {
   $$('[data-mark]', el).forEach(b => b.onclick = () => markPoint(el, b.dataset.mark));
   const pb = $('[data-play]', el); if (pb) pb.onclick = () => playPlay(el);
   $$('[data-more]', el).forEach(b => b.onclick = () => extendPreview(el, +b.dataset.more));
+  const ar = $('[data-around]', el); if (ar) ar.onclick = () => openAround(c);
   const rs = $('[data-reset]', el);
   if (rs) rs.onclick = () => {
     const d = dec(id);
@@ -788,10 +795,125 @@ async function exportApproved() {
   const btn = $('#exportBtn'); btn.disabled = true; btn.textContent = `Exportando ${n}…`;
   try {
     await api('/api/decisions', { runId: state.run.runId, decisions: state.decisions });
-    const r = await api('/api/export', { runId: state.run.runId });
-    toast(`Listo: ${r.count} clips en ${r.folder}` + (r.failed.length ? ` (fallaron: ${r.failed.join(', ')})` : ''), 9000);
-  } catch (err) { toast('Error al exportar: ' + err.message, 8000); }
-  btn.disabled = false; btn.textContent = 'Exportar clips';
+    const job = await api('/api/export', { runId: state.run.runId });
+    toast(`Exportando ${n} clips. Podés ir a otra pantalla: el avance se ve en "Trabajos".`, 6000);
+    pollJobs();
+    watchExport(job.id);
+  } catch (err) { toast('Error al exportar: ' + err.message, 8000); btn.disabled = false; btn.textContent = 'Exportar clips'; }
+}
+// la exportacion sigue en el panel aunque se cambie de pantalla: aca solo se
+// mira como va (el aviso sale en cualquier pantalla)
+async function watchExport(id) {
+  for (;;) {
+    await new Promise(r => setTimeout(r, 2000));
+    let j;
+    try { j = (await api('/api/jobs')).jobs.find(x => x.id === id); } catch (e) { continue; }
+    if (!j) return;
+    const btn = $('#exportBtn');
+    if (j.status === 'exportando') {
+      if (btn && state.run && state.run.runId === j.runId) { btn.disabled = true; btn.textContent = `Exportando ${Math.round(j.progress * 100)}%`; }
+      continue;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Exportar clips'; }
+    toast(j.status === 'listo' ? 'Exportación lista: ' + j.message : 'Error al exportar: ' + (j.error || j.status), 12000);
+    return;
+  }
+}
+
+// ------------------------------------------------ ver alrededor (video original)
+// Un tramo del original copiado tal cual (sin recodificar): aparece al instante.
+// Se puede ir para atras o adelante de a 30 s / 1 min, marcar inicio y fin y
+// usarlo en esta jugada o agregarlo como jugada nueva.
+let AR = null;
+async function openAround(c) {
+  const [a, b] = inOut(c);
+  AR = { clip: c, runId: state.run.runId, inT: null, outT: null, win: null };
+  let m = $('#aroundModal');
+  if (!m) { m = document.createElement('div'); m.id = 'aroundModal'; m.className = 'modal'; document.body.appendChild(m); }
+  m.innerHTML = `<div class="box">
+    <h3>Ver alrededor · ${esc(c.id)}. ${esc(c.title)} <span class="muted" data-ar-pos></span></h3>
+    <video controls playsinline data-ar-video></video>
+    <div class="row" style="margin-top:8px;gap:6px">
+      <button class="small" data-jump="-60">⏪ 1 min antes</button>
+      <button class="small" data-jump="-30">◀ 30 s antes</button>
+      <button class="small" data-jump="30">30 s después ▶</button>
+      <button class="small" data-jump="60">1 min después ⏩</button>
+      <span class="muted" data-ar-st></span>
+    </div>
+    <div class="row" style="margin-top:8px;gap:6px">
+      <button class="small" data-armark="in">⟦ Marcar inicio</button>
+      <button class="small" data-armark="out">Marcar fin ⟧</button>
+      <span data-ar-io class="muted"></span>
+    </div>
+    <div class="row" style="margin-top:10px;gap:6px">
+      <button class="primary" data-ar-use>Usar en esta jugada</button>
+      <input data-ar-title placeholder="Nombre (ej: Carrera 5-4, Último out y saludos)" style="flex:1;min-width:220px">
+      <button data-ar-add>➕ Agregar como jugada nueva</button>
+      <button data-ar-close>Cerrar</button>
+    </div></div>`;
+  m.style.display = 'flex';
+  m.onclick = ev => { if (ev.target === m) closeAround(); };
+  $('[data-ar-close]', m).onclick = closeAround;
+  $$('[data-jump]', m).forEach(btn => btn.onclick = () => { const t = arNow(); if (t != null) loadAround(t + (+btn.dataset.jump), t + (+btn.dataset.jump)); });
+  $$('[data-armark]', m).forEach(btn => btn.onclick = () => {
+    const t = arNow(); if (t == null) return;
+    if (btn.dataset.armark === 'in') AR.inT = t; else AR.outT = t;
+    arPaint();
+  });
+  $('[data-ar-use]', m).onclick = () => {
+    if (AR.inT == null || AR.outT == null || AR.outT <= AR.inT) return toast('Marcá inicio y fin');
+    const d = dec(AR.clip.id); d.inTime = +AR.inT.toFixed(2); d.outTime = +AR.outT.toFixed(2);
+    d.preview = { file: AR.win.file, start: AR.win.start, end: AR.win.end };
+    saveDecisions(); closeAround();
+    const el = document.querySelector(`.card[data-id="${CSS.escape(AR.clip.id)}"]`);
+    if (el) { const v = $('video', el); if (v) { v.src = AR.win.file; v.muted = true; } updateCard(el); }
+    toast('Jugada ajustada');
+  };
+  $('[data-ar-add]', m).onclick = async () => {
+    if (AR.inT == null || AR.outT == null || AR.outT <= AR.inT) return toast('Marcá inicio y fin');
+    const btn = $('[data-ar-add]', m); btn.disabled = true; btn.textContent = 'Agregando…';
+    try {
+      const nc = await api('/api/add-clip', { runId: AR.runId, start: AR.inT, end: AR.outT, title: $('[data-ar-title]', m).value.trim(), video: AR.clip.video || undefined });
+      dec(nc.id).decision = 'approved';
+      clearTimeout(saveTimer);
+      await api('/api/decisions', { runId: AR.runId, decisions: state.decisions });
+      const rid = AR.runId;
+      closeAround(); toast(`Jugada ${nc.id} agregada y aprobada`);
+      openRun(rid);
+    } catch (e) { toast('No se pudo: ' + e.message, 6000); btn.disabled = false; btn.textContent = '➕ Agregar como jugada nueva'; }
+  };
+  loadAround((a + b) / 2, a);
+}
+function arNow() {
+  const v = $('[data-ar-video]'); if (!v || !AR || !AR.win) return null;
+  return AR.win.start + (v.currentTime || 0);
+}
+function arPaint() {
+  const m = $('#aroundModal'); if (!m || !AR) return;
+  $('[data-ar-io]', m).textContent = `Inicio: ${AR.inT != null ? fmt(AR.inT) : '–'} · Fin: ${AR.outT != null ? fmt(AR.outT) : '–'}` +
+    (AR.inT != null && AR.outT != null ? ` · ${(AR.outT - AR.inT).toFixed(1)} s` : '');
+  const v = $('[data-ar-video]', m);
+  if (AR.win) $('[data-ar-pos]', m).textContent = `${fmt(AR.win.start + (v.currentTime || 0))} del video original`;
+}
+async function loadAround(center, seekTo) {
+  const m = $('#aroundModal'); if (!m || !AR) return;
+  const st = $('[data-ar-st]', m), v = $('[data-ar-video]', m);
+  st.textContent = 'Cargando…'; $$('[data-jump]', m).forEach(b => b.disabled = true);
+  try {
+    const w = await api('/api/window', { runId: AR.runId, center, before: 90, after: 90, clipId: AR.clip.id });
+    AR.win = w;
+    v.src = w.file;
+    v.addEventListener('loadedmetadata', () => { v.currentTime = Math.max(0, Math.min(v.duration - 0.5, seekTo - w.start)); v.play().catch(() => {}); }, { once: true });
+    v.ontimeupdate = arPaint;
+    st.textContent = `${fmt(w.start)} – ${fmt(w.end)}`;
+  } catch (e) { st.textContent = 'No se pudo: ' + e.message; }
+  $$('[data-jump]', m).forEach(b => b.disabled = false);
+  arPaint();
+}
+function closeAround() {
+  const m = $('#aroundModal'); if (!m) return;
+  const v = $('[data-ar-video]', m); if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+  m.style.display = 'none';
 }
 
 // ------------------------------------------------ init

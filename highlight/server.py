@@ -235,25 +235,28 @@ def start_live(path, profile="auto", on_game_over=None, hint=None):
     def done(m):
         return auto_finish(m) if m else ""
 
-    s = LiveSession(path, runs_dir(), profile, on_done=done, on_game_over=on_game_over, profile_hint=hint)
     # un analisis en vivo de este mismo video que quedo a medias (el panel se
-    # reinicio mientras grababa): se reemplaza por el nuevo, que relee todo
-    # desde el principio, y se conservan las decisiones ya tomadas
-    for old in list(runs_dir().glob("*/manifest.json")):
+    # reinicio o se cayo mientras grababa): se sigue en ese mismo analisis,
+    # conservando las jugadas ya armadas (con su video) y lo ya marcado
+    resume = None
+    for old in sorted(runs_dir().glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             m = json.loads(old.read_text(encoding="utf-8"))
         except Exception:
             continue
         ls = str(m.get("liveStatus") or "")
         if m.get("video") and str(Path(m["video"]).resolve()) == path and ls and "medias entradas" not in ls:
-            dec = old.parent / "decisiones.json"
-            try:
-                if dec.exists() and dec.stat().st_size > 2:
-                    s.run_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy(dec, s.run_dir / "decisiones.json")
-                shutil.rmtree(old.parent)
-            except Exception:
-                traceback.print_exc()
+            resume = old.parent
+            break
+    if resume is not None:
+        # el ffmpeg del analisis anterior puede seguir leyendo solo: se cierra
+        try:
+            from .recorder import kill_ffmpeg_matching
+            kill_ffmpeg_matching(resume.name)
+        except Exception:
+            traceback.print_exc()
+    s = LiveSession(path, runs_dir(), profile, on_done=done, on_game_over=on_game_over, profile_hint=hint,
+                    resume_dir=resume)
     s.start()
     LIVE[path] = s
     return s.info()
@@ -579,6 +582,8 @@ def _busy():
         return "analizando"
     if any(not ps.finished for ps in LIVE.values()):
         return "cerrando análisis en vivo"
+    if any(j["status"] == "exportando" for j in JOBS):
+        return "exportando"
     if any(v.get("status") == "copiando" for v in REMUX.values()):
         return "exportando"
     return None
@@ -725,7 +730,9 @@ def worker():
         try:
             reuse = None
             if job.get("reuse"):
-                reuse = run_path(job["reuse"]) / "trabajo"
+                works = sorted((d for d in run_path(job["reuse"]).glob("trabajo*") if d.is_dir()),
+                               key=lambda d: d.stat().st_mtime)
+                reuse = works[-1] if works else run_path(job["reuse"]) / "trabajo"
             m = analyze(job["path"], runs_dir(), job["profile"], on_progress=prog, reuse_work=reuse)
             if job.get("reuse"):
                 # conservar las decisiones del analisis anterior cuando coinciden los clips
@@ -757,7 +764,39 @@ def worker():
 
 # ---------------------------------------------------------------- exportar
 
-def export_approved(run_id, folder=""):
+def start_export(run_id, folder=""):
+    """Exportar en segundo plano: el trabajo aparece en la lista de trabajos
+    (con su avance) y sigue aunque se cambie de pantalla en el panel."""
+    m = load_run(run_id)
+    with JOB_LOCK:
+        for j in JOBS:
+            if j.get("kind") == "export" and j.get("runId") == run_id and j["status"] == "exportando":
+                return j
+        job = {"id": f"x{int(time.time() * 1000)}", "kind": "export", "path": "", "runId": run_id,
+               "name": "Exportar clips · " + Path(m.get("videoName") or run_id).stem, "status": "exportando",
+               "progress": 0.0, "message": "Preparando…", "error": None, "queued": time.time(), "auto": False}
+        JOBS.append(job)
+
+    def prog(k, n, title):
+        job["progress"] = k / max(1, n)
+        job["message"] = f"Clip {k + 1} de {n}: {title}" if k < n else "Terminando…"
+
+    def work():
+        try:
+            r = export_approved(run_id, folder, progress=prog)
+            job["result"] = r
+            job["status"] = "listo"
+            job["progress"] = 1.0
+            job["message"] = f"{r['count']} clips en {r['folder']}" + (f" (fallaron: {', '.join(r['failed'])})" if r["failed"] else "")
+        except Exception as exc:
+            traceback.print_exc()
+            job["status"], job["error"] = "error", str(exc)
+        job["finished"] = time.time()
+    threading.Thread(target=work, daemon=True).start()
+    return job
+
+
+def export_approved(run_id, folder="", progress=None):
     m = load_run(run_id)
     dec = m["decisions"]
     video = Path(m["video"])
@@ -773,10 +812,16 @@ def export_approved(run_id, folder=""):
     out_dir.mkdir(parents=True, exist_ok=True)
     done, failed = [], []
     order = 0
+    total = sum(1 for c in m["clips"] if (dec.get(c["id"]) or {}).get("decision") == "approved")
     for c in m["clips"]:
         d = dec.get(c["id"]) or {}
         if d.get("decision") != "approved":
             continue
+        if progress:
+            try:
+                progress(order, total, c.get("title") or c["id"])
+            except Exception:
+                pass
         order += 1
         start, length = adjusted_window(c, d)
         name = f"{order:02d}_{c['half']}_{safe_name(c['title'])}_{int(start // 60):03d}m{int(start % 60):02d}s.mp4"
@@ -1093,6 +1138,102 @@ def render_adjusted(run_id, clip_id, decision, rng=None):
             "length": length}
 
 
+def quick_window(video, out_dir, start, length):
+    """Un tramo del video original para mirar al instante: el video se copia
+    tal cual (sin recodificar, tarda un segundo) y solo se convierte el audio.
+    Arranca en el cuadro clave anterior a start: se devuelve donde arranca de
+    verdad, para pasar el tiempo del reproductor al del video original."""
+    from .ffmpeg import ffmpeg_exe, probe_duration
+    out_dir.mkdir(parents=True, exist_ok=True)
+    s0 = max(0.0, float(start))
+    length = max(2.0, float(length))
+    dest = out_dir / f"ventana_{int(s0)}_{int(length)}_{int(time.time() * 1000) % 100000}.mp4"
+    cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{s0:.3f}", "-i", str(video),
+           "-t", f"{length:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
+           "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+           "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dest)]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if not dest.exists() or dest.stat().st_size < 10000:
+        raise RuntimeError("No pude sacar ese tramo del video original")
+    got = probe_duration(dest) or length
+    real = max(0.0, s0 - max(0.0, got - length))
+    return dest, real, real + got
+
+
+def view_window(run_id, center, before=90.0, after=90.0, clip_id=None):
+    """'Ver alrededor': el original alrededor de un momento, sin esperar."""
+    m = load_run(run_id)
+    video = m["video"]
+    if clip_id:
+        c = next((c for c in m["clips"] if c["id"] == clip_id), None)
+        if c and c.get("video"):
+            video = c["video"]
+    start = max(0.0, float(center) - float(before))
+    dest, real, end = quick_window(video, run_path(run_id) / "ajustados", start, float(before) + float(after))
+    return {"file": f"/media/{run_id}/ajustados/{dest.name}", "start": round(real, 2), "end": round(end, 2)}
+
+
+def add_clip(run_id, start, end, title="", video=None):
+    """Jugada nueva marcada a mano (una carrera o un final que el analisis no
+    encontro). Queda en el analisis como cualquier otra: se aprueba y exporta."""
+    from .render import poster
+    rp = run_path(run_id)
+    m = json.loads((rp / "manifest.json").read_text(encoding="utf-8"))
+    start, end = float(start), float(end)
+    if end - start < 1:
+        raise ValueError("Marcá un inicio y un fin")
+    halves = [h for h in m.get("halves") or [] if h.get("key") not in ("PRE",)]
+    mid = (start + end) / 2
+    h = next((h for h in halves if h.get("start", 0) <= mid <= h.get("end", 0)), None)
+    if h is None and halves:
+        h = min(halves, key=lambda x: min(abs(x.get("start", 0) - mid), abs(x.get("end", 0) - mid)))
+    n = 1 + sum(1 for c in m["clips"] if str(c["id"]).startswith("M"))
+    cid = f"M{n:02d}"
+    src = video or m["video"]
+    dest, real, real_end = quick_window(src, rp / "clips", start - 5, (end - start) + 10)
+    final_name = rp / "clips" / f"{cid}_manual.mp4"
+    try:
+        dest.replace(final_name)
+    except OSError:
+        final_name = dest
+    c = {"id": cid, "half": h["key"] if h else "FIN", "halfLabel": h.get("label", "") if h else "Final",
+         "type": "manual", "title": title or "Jugada agregada", "detail": "agregada a mano",
+         "priority": 50, "suggested": False, "runs": 0, "start": round(start, 2), "end": round(end, 2),
+         "duration": round(end - start, 2), "pitchTime": round(start, 2), "scorebugTime": round(start, 2),
+         "timing": "manual", "file": f"clips/{final_name.name}",
+         "previewStart": round(real, 2), "previewEnd": round(real_end, 2)}
+    if video:
+        c["video"] = video
+    jpg = final_name.with_suffix(".jpg")
+    try:
+        poster(final_name, jpg, max(0.5, start - real + 1))
+        if jpg.exists():
+            c["poster"] = f"clips/{jpg.name}"
+    except Exception:
+        pass
+    # si el analisis sigue en vivo, la jugada entra en lo que el en vivo publica
+    for ss in list(LIVE.values()):
+        if getattr(ss, "run_id", None) == run_id and not ss.finished:
+            ss.ids[f"MAN|{cid}"] = cid
+            ss.published[cid] = c
+    m["clips"].append(c)
+    m["clips"].sort(key=lambda x: (x.get("start", 0) if x.get("type") != "final" else 1e12))
+    for hh in m.get("halves") or []:
+        if h and hh.get("key") == h["key"]:
+            hh.setdefault("clips", []).append(cid)
+            hh["clips"].sort(key=lambda i: next((x.get("start", 0) for x in m["clips"] if x["id"] == i), 0))
+    tmp = rp / "manifest.json.tmp"
+    tmp.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+    for _ in range(20):
+        try:
+            tmp.replace(rp / "manifest.json")
+            break
+        except PermissionError:
+            time.sleep(0.25)
+    return c
+
+
 def browse_folder(title="Elegir carpeta"):
     try:
         import tkinter as tk
@@ -1216,9 +1357,17 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/decisions":
                 return self.send_json(save_decisions(body["runId"], body.get("decisions") or {}))
             if u.path == "/api/export":
-                return self.send_json(export_approved(body["runId"], body.get("folder", "")))
+                if body.get("wait"):
+                    return self.send_json(export_approved(body["runId"], body.get("folder", "")))
+                return self.send_json(start_export(body["runId"], body.get("folder", "")))
             if u.path == "/api/export-xml":
                 return self.send_json(export_sequence(body["runId"], body.get("folder", "")))
+            if u.path == "/api/window":
+                return self.send_json(view_window(body["runId"], body["center"], body.get("before", 90),
+                                                  body.get("after", 90), body.get("clipId")))
+            if u.path == "/api/add-clip":
+                return self.send_json(add_clip(body["runId"], body["start"], body["end"], body.get("title", ""),
+                                               body.get("video")))
             if u.path == "/api/render-adjusted":
                 return self.send_json(render_adjusted(body["runId"], body["clipId"], body.get("decision") or {},
                                                       body.get("range")))

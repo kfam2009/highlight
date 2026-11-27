@@ -106,7 +106,8 @@ def load_ctx_raw(path):
 
 
 class LiveSession:
-    def __init__(self, video, runs_dir, profile_name="auto", on_done=None, on_game_over=None, profile_hint=None):
+    def __init__(self, video, runs_dir, profile_name="auto", on_done=None, on_game_over=None, profile_hint=None,
+                 resume_dir=None):
         self.video = Path(video).resolve()
         self._pc_tpl, self._pc_n = None, 0
         self.runs_dir = Path(runs_dir)
@@ -123,6 +124,15 @@ class LiveSession:
         self.run_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{safe_name(self.video.stem)}"
         self.run_dir = self.runs_dir / self.run_id
         self.work = self.run_dir / "trabajo"
+        if resume_dir:
+            # el panel se reinicio (o se cayo) en medio del partido: se sigue en
+            # el mismo analisis. Se relee el video desde el principio en una
+            # carpeta de trabajo nueva (la vieja puede estar tomada por el
+            # ffmpeg anterior), pero las jugadas ya publicadas se conservan con
+            # su numero, su video y lo que ya se marco: no se vuelven a cortar.
+            self.run_dir = Path(resume_dir)
+            self.run_id = self.run_dir.name
+            self.work = self.run_dir / f"trabajo_{time.strftime('%H%M%S')}"
         self.clip_dir = self.run_dir / "clips"
         self.processed_s = 0.0
         self.pregame = None
@@ -131,11 +141,37 @@ class LiveSession:
         self.segments_done = set()
         self.ids = {}          # clave estable -> id
         self.published = {}    # id -> clip
+        if resume_dir:
+            self._load_published()
         self.proc = None
         self.thread = None
         self.stop_flag = False
         self.finish_flag = False
         self.finished = False
+
+    @staticmethod
+    def clip_key(c):
+        """Clave estable de una jugada (la misma en cada ciclo y al retomar)."""
+        if c.get("half") == "PRE":
+            return f"PRE|{c['id']}"
+        return f"{c['half']}|{c['type'] if c['type'] in ('final', 'revisar') else round(c['scorebugTime'])}"
+
+    def _load_published(self):
+        try:
+            m = json.loads((self.run_dir / "manifest.json").read_text(encoding="utf-8"))
+        except Exception:
+            return
+        for c in m.get("clips") or []:
+            if c.get("type") in ("final", "revisar"):
+                continue   # se recalculan al final
+            if not c.get("file") or not (self.run_dir / c["file"]).exists():
+                continue   # sin video (o se borro): se vuelve a cortar
+            try:
+                self.ids[self.clip_key(c)] = c["id"]
+                self.published[c["id"]] = c
+            except Exception:
+                continue
+        self.message = f"Retomando el análisis ({len(self.published)} jugadas ya armadas)"
 
     # ------------------------------------------------------------------ util
     def info(self):
@@ -391,12 +427,14 @@ class LiveSession:
                 continue
             if not final and (c["scorebugTime"] > limit or c["end"] + (PRE_HANDLE if c["half"] == "PRE" else PREVIEW_HANDLE) > self.processed_s):
                 continue
-            key = f"{c['half']}|{c['type'] if c['type'] in ('final', 'revisar') else round(c['scorebugTime'])}"
-            if c["half"] == "PRE":
-                key = f"PRE|{c['id']}"
+            key = self.clip_key(c)
             if key in self.ids:
                 continue
-            cid = c["id"] if c["half"] == "PRE" else f"{sum(1 for k in self.ids if not k.startswith('PRE|')) + 1:02d}"
+            if c["half"] == "PRE":
+                cid = c["id"]
+            else:
+                nums = [int(v) for k, v in self.ids.items() if not k.startswith("PRE|") and str(v).isdigit()]
+                cid = f"{max(nums, default=0) + 1:02d}"
             self.ids[key] = cid
             c["id"] = cid
             self._render(c)

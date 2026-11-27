@@ -568,9 +568,10 @@ def kill_orphans(pid_dir, keep=()):
     # hubo dos paneles abiertos a la vez): se cierran todos
     if os.name == "nt":
         try:
-            cmd = ("Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | "
-                   "Where-Object { ($_.CommandLine -like '*srt://*' -or $_.CommandLine -like '*-follow 1*') -and @(%s) -notcontains $_.ProcessId } | "
-                   "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }") % (",".join(str(k) for k in keep) or "0")
+            keep_ps = ",".join(str(k) for k in keep) or "0"
+            cmd = ("Get-CimInstance Win32_Process -Filter \"Name LIKE 'ffmpeg%'\" | "
+                   "Where-Object { ($_.CommandLine -like '*srt://*' -or $_.CommandLine -like '*-follow 1*') -and @(" + keep_ps + ") -notcontains $_.ProcessId } | "
+                   "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
             subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
                            capture_output=True, timeout=30)
         except Exception:
@@ -601,6 +602,23 @@ def _stream_key(url):
     return m.group(1) if m else (url or "").split("?")[0]
 
 
+def kill_ffmpeg_matching(text, keep=()):
+    """Cerrar los ffmpeg cuya linea de comandos contiene ese texto (Windows)."""
+    if os.name != "nt" or not text:
+        return []
+    key = str(text).replace("'", "''").replace("[", "`[").replace("]", "`]")
+    keep_ps = ",".join(str(int(k)) for k in keep if k) or "0"
+    cmd = ("Get-CimInstance Win32_Process -Filter \"Name LIKE 'ffmpeg%'\" | "
+           f"Where-Object {{ $_.CommandLine -like '*{key}*' -and @({keep_ps}) -notcontains $_.ProcessId }} | "
+           "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }")
+    try:
+        return subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
+                              capture_output=True, text=True, timeout=40,
+                              creationflags=0x08000000).stdout.split()
+    except Exception:
+        return []
+
+
 def kill_other_recorders(url, keep=()):
     """Antes de conectar un campo: cerrar cualquier otro ffmpeg que este
     tomando la misma senal (grabaciones sueltas de un reinicio del panel).
@@ -608,18 +626,6 @@ def kill_other_recorders(url, keep=()):
     carga y la del panel se corta una y otra vez."""
     if os.name != "nt" or not url:
         return
-    key = _stream_key(url).replace("'", "''")
-    if not key:
-        return
-    keep_ps = ",".join(str(int(k)) for k in keep if k) or "0"
-    cmd = ("Get-CimInstance Win32_Process -Filter \"Name='ffmpeg.exe'\" | "
-           f"Where-Object {{ $_.CommandLine -like '*{key}*' -and @({keep_ps}) -notcontains $_.ProcessId }} | "
-           "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }")
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
-                             capture_output=True, text=True, timeout=40,
-                             creationflags=0x08000000).stdout.split()
-        if out:
-            print(f"Cerré grabaciones sueltas de la misma señal: {', '.join(out)}")
-    except Exception:
-        pass
+    out = kill_ffmpeg_matching(_stream_key(url), keep)
+    if out:
+        print(f"Cerré grabaciones sueltas de la misma señal: {', '.join(out)}")
