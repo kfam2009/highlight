@@ -1152,8 +1152,14 @@ def quick_window(video, out_dir, start, length):
            "-t", f"{length:.3f}", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
            "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
            "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", str(dest)]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120,
-                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        # copiar es rapido, pero un tramo largo (un partido entero) tarda minutos
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=max(120, int(length / 6)),
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError("Tardó demasiado en copiar ese tramo")
     if not dest.exists() or dest.stat().st_size < 10000:
         raise RuntimeError("No pude sacar ese tramo del video original")
     got = probe_duration(dest) or length
